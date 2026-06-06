@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useUser } from "@clerk/clerk-react";
 import { TrendingUp, Wallet, Trophy, Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Route as AuthRoute } from "./route";
 
 export const Route = createFileRoute("/_authenticated/dashboard/")({
   head: () => ({ meta: [{ title: "Dashboard — FundedPlus" }] }),
@@ -9,7 +9,8 @@ export const Route = createFileRoute("/_authenticated/dashboard/")({
 });
 
 function DashboardHome() {
-  const { user } = useUser();
+  const { user } = AuthRoute.useRouteContext();
+  const name = user.user_metadata?.full_name?.split(" ")[0] || "trader";
   const stats = [
     { label: "Active accounts", value: "0", icon: Trophy },
     { label: "Total profit", value: "$0", icon: TrendingUp },
@@ -19,7 +20,7 @@ function DashboardHome() {
   return (
     <div className="p-6 md:p-10 space-y-8">
       <div>
-        <h1 className="text-3xl font-bold">Welcome back, {user?.firstName || "trader"}.</h1>
+        <h1 className="text-3xl font-bold">Welcome back, {name}.</h1>
         <p className="text-muted-foreground mt-1">Here's a snapshot of your trading activity.</p>
       </div>
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
