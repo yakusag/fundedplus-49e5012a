@@ -9,38 +9,261 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as PricingRouteImport } from './routes/pricing'
+import { Route as FaqRouteImport } from './routes/faq'
+import { Route as ChallengesRouteImport } from './routes/challenges'
+import { Route as AdminRouteImport } from './routes/admin'
+import { Route as AboutRouteImport } from './routes/about'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthSignUpRouteImport } from './routes/auth/sign-up'
+import { Route as AuthSignInRouteImport } from './routes/auth/sign-in'
+import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard.index'
+import { Route as ApiPublicPaytabsWebhookRouteImport } from './routes/api/public/paytabs-webhook'
+import { Route as AuthenticatedDashboardProfileRouteImport } from './routes/_authenticated/dashboard.profile'
+import { Route as AuthenticatedDashboardPayoutsRouteImport } from './routes/_authenticated/dashboard.payouts'
+import { Route as AuthenticatedDashboardChallengesRouteImport } from './routes/_authenticated/dashboard.challenges'
+import { Route as AuthenticatedDashboardCheckoutPlanIdRouteImport } from './routes/_authenticated/dashboard.checkout.$planId'
 
+const PricingRoute = PricingRouteImport.update({
+  id: '/pricing',
+  path: '/pricing',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FaqRoute = FaqRouteImport.update({
+  id: '/faq',
+  path: '/faq',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChallengesRoute = ChallengesRouteImport.update({
+  id: '/challenges',
+  path: '/challenges',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
+  id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthSignUpRoute = AuthSignUpRouteImport.update({
+  id: '/auth/sign-up',
+  path: '/auth/sign-up',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthSignInRoute = AuthSignInRouteImport.update({
+  id: '/auth/sign-in',
+  path: '/auth/sign-in',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedDashboardIndexRoute =
+  AuthenticatedDashboardIndexRouteImport.update({
+    id: '/dashboard/',
+    path: '/dashboard/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const ApiPublicPaytabsWebhookRoute = ApiPublicPaytabsWebhookRouteImport.update({
+  id: '/api/public/paytabs-webhook',
+  path: '/api/public/paytabs-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedDashboardProfileRoute =
+  AuthenticatedDashboardProfileRouteImport.update({
+    id: '/dashboard/profile',
+    path: '/dashboard/profile',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedDashboardPayoutsRoute =
+  AuthenticatedDashboardPayoutsRouteImport.update({
+    id: '/dashboard/payouts',
+    path: '/dashboard/payouts',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedDashboardChallengesRoute =
+  AuthenticatedDashboardChallengesRouteImport.update({
+    id: '/dashboard/challenges',
+    path: '/dashboard/challenges',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedDashboardCheckoutPlanIdRoute =
+  AuthenticatedDashboardCheckoutPlanIdRouteImport.update({
+    id: '/dashboard/checkout/$planId',
+    path: '/dashboard/checkout/$planId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
+  '/admin': typeof AdminRoute
+  '/challenges': typeof ChallengesRoute
+  '/faq': typeof FaqRoute
+  '/pricing': typeof PricingRoute
+  '/auth/sign-in': typeof AuthSignInRoute
+  '/auth/sign-up': typeof AuthSignUpRoute
+  '/dashboard/challenges': typeof AuthenticatedDashboardChallengesRoute
+  '/dashboard/payouts': typeof AuthenticatedDashboardPayoutsRoute
+  '/dashboard/profile': typeof AuthenticatedDashboardProfileRoute
+  '/api/public/paytabs-webhook': typeof ApiPublicPaytabsWebhookRoute
+  '/dashboard/': typeof AuthenticatedDashboardIndexRoute
+  '/dashboard/checkout/$planId': typeof AuthenticatedDashboardCheckoutPlanIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
+  '/admin': typeof AdminRoute
+  '/challenges': typeof ChallengesRoute
+  '/faq': typeof FaqRoute
+  '/pricing': typeof PricingRoute
+  '/auth/sign-in': typeof AuthSignInRoute
+  '/auth/sign-up': typeof AuthSignUpRoute
+  '/dashboard/challenges': typeof AuthenticatedDashboardChallengesRoute
+  '/dashboard/payouts': typeof AuthenticatedDashboardPayoutsRoute
+  '/dashboard/profile': typeof AuthenticatedDashboardProfileRoute
+  '/api/public/paytabs-webhook': typeof ApiPublicPaytabsWebhookRoute
+  '/dashboard': typeof AuthenticatedDashboardIndexRoute
+  '/dashboard/checkout/$planId': typeof AuthenticatedDashboardCheckoutPlanIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/about': typeof AboutRoute
+  '/admin': typeof AdminRoute
+  '/challenges': typeof ChallengesRoute
+  '/faq': typeof FaqRoute
+  '/pricing': typeof PricingRoute
+  '/auth/sign-in': typeof AuthSignInRoute
+  '/auth/sign-up': typeof AuthSignUpRoute
+  '/_authenticated/dashboard/challenges': typeof AuthenticatedDashboardChallengesRoute
+  '/_authenticated/dashboard/payouts': typeof AuthenticatedDashboardPayoutsRoute
+  '/_authenticated/dashboard/profile': typeof AuthenticatedDashboardProfileRoute
+  '/api/public/paytabs-webhook': typeof ApiPublicPaytabsWebhookRoute
+  '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
+  '/_authenticated/dashboard/checkout/$planId': typeof AuthenticatedDashboardCheckoutPlanIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/about'
+    | '/admin'
+    | '/challenges'
+    | '/faq'
+    | '/pricing'
+    | '/auth/sign-in'
+    | '/auth/sign-up'
+    | '/dashboard/challenges'
+    | '/dashboard/payouts'
+    | '/dashboard/profile'
+    | '/api/public/paytabs-webhook'
+    | '/dashboard/'
+    | '/dashboard/checkout/$planId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/about'
+    | '/admin'
+    | '/challenges'
+    | '/faq'
+    | '/pricing'
+    | '/auth/sign-in'
+    | '/auth/sign-up'
+    | '/dashboard/challenges'
+    | '/dashboard/payouts'
+    | '/dashboard/profile'
+    | '/api/public/paytabs-webhook'
+    | '/dashboard'
+    | '/dashboard/checkout/$planId'
+  id:
+    | '__root__'
+    | '/'
+    | '/_authenticated'
+    | '/about'
+    | '/admin'
+    | '/challenges'
+    | '/faq'
+    | '/pricing'
+    | '/auth/sign-in'
+    | '/auth/sign-up'
+    | '/_authenticated/dashboard/challenges'
+    | '/_authenticated/dashboard/payouts'
+    | '/_authenticated/dashboard/profile'
+    | '/api/public/paytabs-webhook'
+    | '/_authenticated/dashboard/'
+    | '/_authenticated/dashboard/checkout/$planId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  AboutRoute: typeof AboutRoute
+  AdminRoute: typeof AdminRoute
+  ChallengesRoute: typeof ChallengesRoute
+  FaqRoute: typeof FaqRoute
+  PricingRoute: typeof PricingRoute
+  AuthSignInRoute: typeof AuthSignInRoute
+  AuthSignUpRoute: typeof AuthSignUpRoute
+  ApiPublicPaytabsWebhookRoute: typeof ApiPublicPaytabsWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/pricing': {
+      id: '/pricing'
+      path: '/pricing'
+      fullPath: '/pricing'
+      preLoaderRoute: typeof PricingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/faq': {
+      id: '/faq'
+      path: '/faq'
+      fullPath: '/faq'
+      preLoaderRoute: typeof FaqRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/challenges': {
+      id: '/challenges'
+      path: '/challenges'
+      fullPath: '/challenges'
+      preLoaderRoute: typeof ChallengesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,22 +271,97 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/sign-up': {
+      id: '/auth/sign-up'
+      path: '/auth/sign-up'
+      fullPath: '/auth/sign-up'
+      preLoaderRoute: typeof AuthSignUpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/sign-in': {
+      id: '/auth/sign-in'
+      path: '/auth/sign-in'
+      fullPath: '/auth/sign-in'
+      preLoaderRoute: typeof AuthSignInRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/dashboard/': {
+      id: '/_authenticated/dashboard/'
+      path: '/dashboard'
+      fullPath: '/dashboard/'
+      preLoaderRoute: typeof AuthenticatedDashboardIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/api/public/paytabs-webhook': {
+      id: '/api/public/paytabs-webhook'
+      path: '/api/public/paytabs-webhook'
+      fullPath: '/api/public/paytabs-webhook'
+      preLoaderRoute: typeof ApiPublicPaytabsWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/dashboard/profile': {
+      id: '/_authenticated/dashboard/profile'
+      path: '/dashboard/profile'
+      fullPath: '/dashboard/profile'
+      preLoaderRoute: typeof AuthenticatedDashboardProfileRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/dashboard/payouts': {
+      id: '/_authenticated/dashboard/payouts'
+      path: '/dashboard/payouts'
+      fullPath: '/dashboard/payouts'
+      preLoaderRoute: typeof AuthenticatedDashboardPayoutsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/dashboard/challenges': {
+      id: '/_authenticated/dashboard/challenges'
+      path: '/dashboard/challenges'
+      fullPath: '/dashboard/challenges'
+      preLoaderRoute: typeof AuthenticatedDashboardChallengesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/dashboard/checkout/$planId': {
+      id: '/_authenticated/dashboard/checkout/$planId'
+      path: '/dashboard/checkout/$planId'
+      fullPath: '/dashboard/checkout/$planId'
+      preLoaderRoute: typeof AuthenticatedDashboardCheckoutPlanIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
+interface AuthenticatedRouteRouteChildren {
+  AuthenticatedDashboardChallengesRoute: typeof AuthenticatedDashboardChallengesRoute
+  AuthenticatedDashboardPayoutsRoute: typeof AuthenticatedDashboardPayoutsRoute
+  AuthenticatedDashboardProfileRoute: typeof AuthenticatedDashboardProfileRoute
+  AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
+  AuthenticatedDashboardCheckoutPlanIdRoute: typeof AuthenticatedDashboardCheckoutPlanIdRoute
+}
+
+const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedDashboardChallengesRoute: AuthenticatedDashboardChallengesRoute,
+  AuthenticatedDashboardPayoutsRoute: AuthenticatedDashboardPayoutsRoute,
+  AuthenticatedDashboardProfileRoute: AuthenticatedDashboardProfileRoute,
+  AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
+  AuthenticatedDashboardCheckoutPlanIdRoute:
+    AuthenticatedDashboardCheckoutPlanIdRoute,
+}
+
+const AuthenticatedRouteRouteWithChildren =
+  AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  AboutRoute: AboutRoute,
+  AdminRoute: AdminRoute,
+  ChallengesRoute: ChallengesRoute,
+  FaqRoute: FaqRoute,
+  PricingRoute: PricingRoute,
+  AuthSignInRoute: AuthSignInRoute,
+  AuthSignUpRoute: AuthSignUpRoute,
+  ApiPublicPaytabsWebhookRoute: ApiPublicPaytabsWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
