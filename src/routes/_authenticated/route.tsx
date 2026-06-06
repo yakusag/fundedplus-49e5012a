@@ -1,4 +1,4 @@
-import { createFileRoute, Outlet, Link, redirect } from "@tanstack/react-router";
+import { createFileRoute, Outlet, Link } from "@tanstack/react-router";
 import { useUser, UserButton, SignedIn, SignedOut, RedirectToSignIn } from "@clerk/clerk-react";
 import { LayoutDashboard, ShoppingBag, Wallet, User as UserIcon } from "lucide-react";
 import { Logo } from "@/components/site/Logo";
