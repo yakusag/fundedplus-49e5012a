@@ -6,12 +6,12 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { ClerkProvider } from "@clerk/clerk-react";
 import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
-import { CLERK_PUBLISHABLE_KEY, isClerkConfigured } from "../integrations/clerk";
+import { supabase } from "@/integrations/supabase/client";
+import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
   return (
@@ -19,9 +19,6 @@ function NotFoundComponent() {
       <div className="max-w-md text-center">
         <h1 className="text-7xl font-bold text-gradient">404</h1>
         <h2 className="mt-4 text-xl font-semibold">Page not found</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          The page you're looking for doesn't exist.
-        </p>
         <a href="/" className="mt-6 inline-flex items-center justify-center rounded-md bg-gradient-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-ice">
           Back home
         </a>
@@ -91,34 +88,23 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
-function ConfigureClerkBanner() {
-  return (
-    <div className="fixed bottom-4 right-4 z-[100] max-w-sm rounded-lg border border-primary/40 bg-card/95 backdrop-blur p-4 shadow-card">
-      <p className="text-sm font-semibold mb-1">Clerk not configured</p>
-      <p className="text-xs text-muted-foreground">
-        Paste your Clerk publishable key (pk_test_… or pk_live_…) in chat so I can wire up auth.
-      </p>
-    </div>
-  );
-}
-
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const router = useRouter();
 
-  const content = (
-    <QueryClientProvider client={queryClient}>
-      <Outlet />
-      {!isClerkConfigured && <ConfigureClerkBanner />}
-    </QueryClientProvider>
-  );
-
-  if (!isClerkConfigured) {
-    return content;
-  }
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
+      router.invalidate();
+      if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
+    });
+    return () => subscription.unsubscribe();
+  }, [router, queryClient]);
 
   return (
-    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} afterSignOutUrl="/">
-      {content}
-    </ClerkProvider>
+    <QueryClientProvider client={queryClient}>
+      <Outlet />
+      <Toaster />
+    </QueryClientProvider>
   );
 }

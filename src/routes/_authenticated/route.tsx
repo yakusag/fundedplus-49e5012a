@@ -1,75 +1,76 @@
-import { createFileRoute, Outlet, Link } from "@tanstack/react-router";
-import { useUser, UserButton, SignedIn, SignedOut, RedirectToSignIn } from "@clerk/clerk-react";
-import { LayoutDashboard, ShoppingBag, Wallet, User as UserIcon } from "lucide-react";
+import { createFileRoute, Outlet, Link, redirect, useNavigate } from "@tanstack/react-router";
+import { LayoutDashboard, ShoppingBag, Wallet, User as UserIcon, LogOut, Shield } from "lucide-react";
 import { Logo } from "@/components/site/Logo";
-import { isClerkConfigured } from "@/integrations/clerk";
+import { supabase } from "@/integrations/supabase/client";
+import { useIsAdmin } from "@/hooks/useAuth";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
+  beforeLoad: async () => {
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) throw redirect({ to: "/auth" });
+    return { user: data.user };
+  },
   component: AuthLayout,
 });
 
 const items = [
-  { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { to: "/dashboard/challenges", label: "Challenges", icon: ShoppingBag },
-  { to: "/dashboard/payouts", label: "Payouts", icon: Wallet },
-  { to: "/dashboard/profile", label: "Profile", icon: UserIcon },
+  { to: "/dashboard", label: "Overview", icon: LayoutDashboard, exact: true },
+  { to: "/dashboard/challenges", label: "Challenges", icon: ShoppingBag, exact: false },
+  { to: "/dashboard/payouts", label: "Payouts", icon: Wallet, exact: false },
+  { to: "/dashboard/profile", label: "Profile", icon: UserIcon, exact: false },
 ] as const;
 
 function AuthLayout() {
-  if (!isClerkConfigured) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <div className="glass rounded-2xl p-8 max-w-md text-center">
-          <h2 className="text-xl font-semibold">Authentication not configured</h2>
-          <p className="mt-2 text-sm text-muted-foreground">Paste your Clerk publishable key in chat to enable the dashboard.</p>
-          <Link to="/" className="mt-6 inline-block text-primary text-sm">← Back home</Link>
-        </div>
-      </div>
-    );
+  const { user } = Route.useRouteContext();
+  const { isAdmin } = useIsAdmin();
+  const navigate = useNavigate();
+
+  async function signOut() {
+    await supabase.auth.signOut();
+    navigate({ to: "/", replace: true });
   }
 
   return (
-    <>
-      <SignedOut><RedirectToSignIn redirectUrl="/dashboard" /></SignedOut>
-      <SignedIn>
-        <div className="min-h-screen flex">
-          <aside className="hidden md:flex w-64 flex-col border-r border-border/50 bg-card/30 p-4">
-            <Logo className="mb-8" />
-            <nav className="space-y-1 flex-1">
-              {items.map((i) => (
-                <Link
-                  key={i.to}
-                  to={i.to}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-                  activeProps={{ className: "bg-gradient-primary text-primary-foreground hover:opacity-90" }}
-                  activeOptions={{ exact: i.to === "/dashboard" }}
-                >
-                  <i.icon className="h-4 w-4" />
-                  {i.label}
-                </Link>
-              ))}
-            </nav>
-            <div className="flex items-center gap-3 rounded-lg p-2 border border-border/40">
-              <UserButton afterSignOutUrl="/" />
-              <UserName />
-            </div>
-          </aside>
-          <main className="flex-1 overflow-x-hidden">
-            <Outlet />
-          </main>
+    <div className="min-h-screen flex">
+      <aside className="hidden md:flex w-64 flex-col border-r border-border/50 bg-card/30 p-4">
+        <Logo className="mb-8" />
+        <nav className="space-y-1 flex-1">
+          {items.map((i) => (
+            <Link
+              key={i.to}
+              to={i.to}
+              className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+              activeProps={{ className: "bg-gradient-primary text-primary-foreground hover:opacity-90" }}
+              activeOptions={{ exact: i.exact }}
+            >
+              <i.icon className="h-4 w-4" />
+              {i.label}
+            </Link>
+          ))}
+          {isAdmin && (
+            <Link
+              to="/admin"
+              className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors mt-4 border-t border-border/40 pt-4"
+            >
+              <Shield className="h-4 w-4" />
+              Admin Console
+            </Link>
+          )}
+        </nav>
+        <div className="space-y-2">
+          <div className="rounded-lg p-2 border border-border/40">
+            <div className="text-xs font-medium truncate">{user.user_metadata?.full_name || user.email}</div>
+            <div className="text-xs text-muted-foreground truncate">{user.email}</div>
+          </div>
+          <button onClick={signOut} className="w-full flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground px-2 py-1">
+            <LogOut className="h-3 w-3" /> Sign out
+          </button>
         </div>
-      </SignedIn>
-    </>
-  );
-}
-
-function UserName() {
-  const { user } = useUser();
-  return (
-    <div className="flex-1 min-w-0">
-      <div className="text-xs font-medium truncate">{user?.firstName || user?.username || "Trader"}</div>
-      <div className="text-xs text-muted-foreground truncate">{user?.primaryEmailAddress?.emailAddress}</div>
+      </aside>
+      <main className="flex-1 overflow-x-hidden">
+        <Outlet />
+      </main>
     </div>
   );
 }
