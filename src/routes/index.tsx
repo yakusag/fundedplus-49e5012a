@@ -42,7 +42,7 @@ function Hero() {
           className="inline-flex items-center gap-2 rounded-full glass px-4 py-1.5 text-xs font-medium mb-6"
         >
           <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
-          New: 90% profit split on $100K+ accounts
+          New pricing — $5K from $39 · MT4 & MT5 · Free demo
         </motion.div>
         <motion.h1
           initial={{ opacity: 0, y: 20 }}
@@ -68,12 +68,18 @@ function Hero() {
           className="mt-10 flex flex-wrap justify-center gap-3"
         >
           <Button asChild size="lg" className="bg-gradient-primary text-primary-foreground hover:opacity-90 shadow-ice text-base h-12 px-8">
-            <Link to="/challenges">Start a challenge <ArrowRight className="ml-2 h-4 w-4" /></Link>
+            <Link to="/challenges">Start from $39 <ArrowRight className="ml-2 h-4 w-4" /></Link>
           </Button>
           <Button asChild size="lg" variant="outline" className="h-12 px-8 text-base">
-            <Link to="/pricing">View pricing</Link>
+            <Link to="/challenges" search={{ demo: 1 } as any}>Try free demo</Link>
           </Button>
         </motion.div>
+        <div className="mt-6 flex flex-wrap justify-center gap-4 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-primary" /> MetaTrader 4</span>
+          <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-primary" /> MetaTrader 5</span>
+          <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-primary" /> Free demo account</span>
+          <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-primary" /> KYC verified payouts</span>
+        </div>
       </div>
     </section>
   );
@@ -109,7 +115,7 @@ function Stats() {
 
 function Features() {
   const items = [
-    { icon: TrendingUp, title: "Trade what you know", desc: "Forex, indices, crypto, commodities. All major instruments on MT5." },
+    { icon: TrendingUp, title: "MT4 & MT5 ready", desc: "Forex, indices, crypto, commodities. Trade on MetaTrader 4 or 5 — your call." },
     { icon: Shield, title: "Fair rules", desc: "Clear drawdown limits. No hidden gotchas. Daily 5%, total 10%." },
     { icon: Zap, title: "Fast payouts", desc: "First payout in 14 days, then every 14 days. Processed in 24 hours." },
     { icon: DollarSign, title: "Up to 90% split", desc: "Keep more of what you earn. Profit splits scale with account size." },
