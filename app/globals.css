@@ -1,0 +1,86 @@
+@import "@fontsource/space-grotesk/400.css";
+@import "@fontsource/space-grotesk/500.css";
+@import "@fontsource/space-grotesk/600.css";
+@import "@fontsource/space-grotesk/700.css";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --radius: 0.75rem;
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+    --card: 222 40% 14%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 40% 13%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 199 89% 65%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 222 35% 18%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 222 35% 16%;
+    --muted-foreground: 215 20% 55%;
+    --accent: 215 40% 20%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+    --success: 160 84% 39%;
+    --success-foreground: 222 47% 11%;
+    --border: 215 28% 17%;
+    --input: 215 28% 17%;
+    --ring: 199 89% 65%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, hsl(215 80% 30% / 0.25), transparent),
+      radial-gradient(ellipse 60% 50% at 80% 110%, hsl(210 85% 35% / 0.15), transparent);
+    background-attachment: fixed;
+  }
+
+  h1, h2, h3, h4, h5 {
+    font-family: "Space Grotesk", system-ui, sans-serif;
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer utilities {
+  .glass {
+    background: linear-gradient(135deg, hsl(215 100% 100% / 0.08), hsl(215 100% 100% / 0.02));
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid hsl(215 100% 100% / 0.08);
+  }
+
+  .text-gradient {
+    background: linear-gradient(135deg, hsl(199 95% 74%) 0%, hsl(214 85% 55%) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .bg-gradient-primary {
+    background: linear-gradient(135deg, hsl(199 95% 74%) 0%, hsl(214 85% 55%) 100%);
+  }
+
+  .shadow-glow {
+    box-shadow: 0 0 60px hsl(199 89% 65% / 0.35);
+  }
+
+  .shadow-ice {
+    box-shadow: 0 10px 40px -10px hsl(214 85% 55% / 0.5);
+  }
+}
