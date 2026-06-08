@@ -11,9 +11,9 @@ channel = "stable-25_05"
 [userenv.shared]
 NEXT_PUBLIC_CLERK_SIGN_IN_URL = "/sign-in"
 NEXT_PUBLIC_CLERK_SIGN_UP_URL = "/sign-up"
-NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL = "/dashboard"
-NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL = "/dashboard"
 PAYTABS_REGION = "ARE"
+NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL = "/dashboard"
+NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL = "/dashboard"
 
 [workflows]
 runButton = "Project"
