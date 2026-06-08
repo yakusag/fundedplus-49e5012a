@@ -2,8 +2,7 @@ import express from "express";
 import cors from "cors";
 import { createHmac, timingSafeEqual } from "crypto";
 
-const app = express();
-const PORT = process.env.SERVER_PORT || 3001;
+export const app = express();
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
@@ -59,7 +58,9 @@ app.post("/api/paytabs-payment", async (req, res) => {
   const plan = plans[planId];
   if (!plan) return res.status(400).json({ error: "Unknown plan." });
 
-  const origin = `https://${process.env.REPLIT_DEV_DOMAIN || "localhost:5000"}`;
+  const origin = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : `https://${process.env.REPLIT_DEV_DOMAIN || "localhost:5000"}`;
   const cartId = `fp_${auth.userId}_${planId}_${Date.now()}`;
   const endpoint = `${regionEndpoint(region)}/payment/request`;
 
@@ -126,6 +127,9 @@ app.post("/api/paytabs-webhook", express.text({ type: "*/*" }), (req, res) => {
   res.send("ok");
 });
 
-app.listen(PORT, () => {
-  console.log(`[server] API running on port ${PORT}`);
-});
+if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
+  const PORT = process.env.SERVER_PORT || 3001;
+  app.listen(PORT, () => {
+    console.log(`[server] API running on port ${PORT}`);
+  });
+}
