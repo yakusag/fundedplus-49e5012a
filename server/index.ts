@@ -428,6 +428,105 @@ async function sendMt5CredentialsEmail({
   console.log("[email] MT5 credentials sent to", email);
 }
 
+async function sendPayoutStatusEmail({
+  email,
+  amount,
+  status,
+  notes,
+}: {
+  email: string;
+  amount: number;
+  status: string;
+  notes?: string | null;
+}) {
+  const fromAddress = process.env.RESEND_FROM_EMAIL || "FundedPlus <onboarding@resend.dev>";
+  const isApproved = status === "paid";
+  const statusLabel = isApproved ? "Approved" : "Rejected";
+  const statusColor = isApproved ? "#00c896" : "#e05252";
+  const headerSubtitle = isApproved
+    ? "Your payout has been approved"
+    : "Your payout request was not approved";
+
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Payout Request ${statusLabel}</title>
+</head>
+<body style="margin:0;padding:0;background:#0f0f0f;font-family:'Segoe UI',Arial,sans-serif;color:#e5e5e5;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0f0f;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" style="background:#1a1a1a;border-radius:12px;overflow:hidden;border:1px solid #2a2a2a;max-width:560px;width:100%;">
+          <tr>
+            <td style="background:linear-gradient(135deg,${statusColor},${isApproved ? "#00a878" : "#c04040"});padding:32px 40px;text-align:center;">
+              <h1 style="margin:0;font-size:24px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">FundedPlus</h1>
+              <p style="margin:8px 0 0;font-size:14px;color:rgba(255,255,255,0.85);">${headerSubtitle}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:36px 40px;">
+              <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#cccccc;">
+                ${isApproved
+                  ? "Great news! Your payout request has been reviewed and approved. The funds will be transferred to your account shortly."
+                  : "Your payout request has been reviewed. Unfortunately, it was not approved at this time. Please see the details below."}
+              </p>
+
+              <table width="100%" cellpadding="0" cellspacing="0" style="background:#111111;border:1px solid #2a2a2a;border-radius:8px;overflow:hidden;margin-bottom:28px;">
+                <tr>
+                  <td style="padding:20px 24px;">
+                    <p style="margin:0 0 16px;font-size:12px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:${statusColor};">Payout Details</p>
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding:8px 0;border-bottom:1px solid #1f1f1f;font-size:13px;color:#888888;width:140px;">Amount</td>
+                        <td style="padding:8px 0;border-bottom:1px solid #1f1f1f;font-size:15px;font-weight:600;color:#ffffff;font-family:monospace;">$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 0;${notes ? "border-bottom:1px solid #1f1f1f;" : ""}font-size:13px;color:#888888;">Status</td>
+                        <td style="padding:8px 0;${notes ? "border-bottom:1px solid #1f1f1f;" : ""}font-size:15px;font-weight:600;color:${statusColor};">${statusLabel}</td>
+                      </tr>
+                      ${notes ? `<tr>
+                        <td style="padding:8px 0;font-size:13px;color:#888888;vertical-align:top;">Notes</td>
+                        <td style="padding:8px 0;font-size:14px;color:#cccccc;line-height:1.5;">${notes}</td>
+                      </tr>` : ""}
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0;font-size:13px;line-height:1.6;color:#666666;">
+                If you have any questions, reach out to us at <a href="mailto:support@fundedplus.com" style="color:#00c896;text-decoration:none;">support@fundedplus.com</a>.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:20px 40px;border-top:1px solid #2a2a2a;text-align:center;">
+              <p style="margin:0;font-size:12px;color:#444444;">© ${new Date().getFullYear()} FundedPlus. All rights reserved.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const { error } = await resend.emails.send({
+    from: fromAddress,
+    to: email,
+    subject: `FundedPlus Payout Request ${statusLabel}`,
+    html,
+  });
+
+  if (error) {
+    throw new Error(`Resend error: ${JSON.stringify(error)}`);
+  }
+
+  console.log("[email] payout status email sent to", email, "status:", status);
+}
+
 async function createMt5AccountInternal(userId: string, userEmail: string) {
   const metaapiToken = process.env.METAAPI_TOKEN;
 
@@ -607,10 +706,25 @@ app.patch("/api/admin/payouts/:id", requireAdmin, async (req, res) => {
   if (!allowed.includes(status)) return res.status(400).json({ error: "Invalid status" });
   try {
     const result = await pool.query(
-      "UPDATE payout_requests SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING id",
+      "UPDATE payout_requests SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING id, user_email, amount, notes",
       [status, id]
     );
     if (result.rowCount === 0) return res.status(404).json({ error: "Not found" });
+
+    const row = result.rows[0];
+    if (status === "paid" || status === "rejected") {
+      try {
+        await sendPayoutStatusEmail({
+          email: row.user_email,
+          amount: parseFloat(row.amount),
+          status,
+          notes: row.notes,
+        });
+      } catch (emailErr) {
+        console.error("[admin/payouts] failed to send status email:", emailErr);
+      }
+    }
+
     res.json({ success: true });
   } catch (e) {
     console.error("[admin/payouts patch]", e);
