@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHmac, timingSafeEqual, randomBytes } from "crypto";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import pool from "./db.js";
 
@@ -75,6 +75,16 @@ function regionEndpoint(region: string): string {
   return map[region.toUpperCase()] || map.ARE;
 }
 
+function generatePassword(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  const special = "!@#$%";
+  let pwd = "";
+  for (let i = 0; i < 10; i++) pwd += chars[Math.floor(Math.random() * chars.length)];
+  pwd += special[Math.floor(Math.random() * special.length)];
+  pwd += Math.floor(Math.random() * 90 + 10);
+  return pwd;
+}
+
 async function ensureUserRegistered(userId: string, email: string) {
   try {
     await pool.query(
@@ -124,6 +134,20 @@ async function initDb() {
         first_seen TIMESTAMP DEFAULT NOW(),
         last_seen TIMESTAMP DEFAULT NOW()
       );
+
+      CREATE TABLE IF NOT EXISTS mt5_accounts (
+        id SERIAL PRIMARY KEY,
+        user_id VARCHAR(255) UNIQUE NOT NULL,
+        user_email VARCHAR(255),
+        login VARCHAR(100),
+        password VARCHAR(255),
+        investor_password VARCHAR(255),
+        server VARCHAR(255),
+        account_id VARCHAR(255),
+        balance DECIMAL(10,2) DEFAULT 10000,
+        platform VARCHAR(10) DEFAULT 'MT5',
+        created_at TIMESTAMP DEFAULT NOW()
+      );
     `);
     console.log("[db] Schema ready");
   } catch (e) {
@@ -131,6 +155,7 @@ async function initDb() {
   }
 }
 
+/* ─── PayTabs Payment ──────────────────────────────────────────────── */
 app.post("/api/paytabs-payment", async (req, res) => {
   const auth = await verifyClerkToken(req.headers.authorization);
   if (!auth || !auth.userId) {
@@ -144,24 +169,25 @@ app.post("/api/paytabs-payment", async (req, res) => {
   const region = process.env.PAYTABS_REGION || "ARE";
 
   if (!profileId || !serverKey) {
-    return res.status(500).json({ error: "PayTabs is not configured." });
+    return res.status(500).json({ error: "PayTabs is not configured. Check PAYTABS_PROFILE_ID and PAYTABS_SERVER_KEY." });
   }
 
   const { planId } = req.body;
   const plans: Record<string, { label: string; price: number }> = {
-    "5k": { label: "$5K", price: 39 },
-    "10k": { label: "$10K", price: 69 },
-    "25k": { label: "$25K", price: 139 },
-    "50k": { label: "$50K", price: 229 },
+    "5k":   { label: "$5K",   price: 39  },
+    "10k":  { label: "$10K",  price: 69  },
+    "25k":  { label: "$25K",  price: 139 },
+    "50k":  { label: "$50K",  price: 229 },
     "100k": { label: "$100K", price: 389 },
     "200k": { label: "$200K", price: 749 },
   };
   const plan = plans[planId];
-  if (!plan) return res.status(400).json({ error: "Unknown plan." });
+  if (!plan) return res.status(400).json({ error: "Unknown plan ID." });
 
   const origin = process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
     : `https://${process.env.REPLIT_DEV_DOMAIN || "localhost:5000"}`;
+
   const cartId = `fp_${auth.userId}_${planId}_${Date.now()}`;
   const endpoint = `${regionEndpoint(region)}/payment/request`;
 
@@ -170,30 +196,48 @@ app.post("/api/paytabs-payment", async (req, res) => {
     tran_type: "sale",
     tran_class: "ecom",
     cart_id: cartId,
-    cart_description: `FundedPlus ${plan.label} challenge`,
+    cart_description: `FundedPlus ${plan.label} Challenge`,
     cart_currency: "USD",
     cart_amount: plan.price,
     customer_details: {
       name: auth.email.split("@")[0] || "Trader",
       email: auth.email || "noreply@fundedplus.com",
       street1: "N/A",
-      city: "N/A",
+      city: "Dubai",
       country: "AE",
       zip: "00000",
     },
-    return: `${origin}/dashboard?paid=1`,
+    return: `${origin}/dashboard?paid=1&plan=${planId}`,
     callback: `${origin}/api/paytabs-webhook`,
   };
+
+  console.log("[paytabs] initiating payment", { planId, amount: plan.price, region, endpoint });
 
   try {
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: serverKey },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: serverKey,
+      },
       body: JSON.stringify(body),
     });
-    const json = await response.json() as { redirect_url?: string; tran_ref?: string; message?: string };
+
+    const text = await response.text();
+    let json: { redirect_url?: string; tran_ref?: string; message?: string; code?: string };
+    try {
+      json = JSON.parse(text);
+    } catch {
+      console.error("[paytabs] non-JSON response:", text.slice(0, 500));
+      return res.status(500).json({ error: `PayTabs returned non-JSON (status ${response.status}). Check your region and credentials.` });
+    }
+
+    console.log("[paytabs] response", response.status, json.message || json.code || "ok");
+
     if (!response.ok || !json.redirect_url) {
-      return res.status(500).json({ error: json.message || `PayTabs error ${response.status}` });
+      return res.status(500).json({
+        error: json.message || `PayTabs error (HTTP ${response.status}). Verify profile ID, server key and region.`,
+      });
     }
 
     try {
@@ -209,11 +253,13 @@ app.post("/api/paytabs-payment", async (req, res) => {
 
     return res.json({ redirect_url: json.redirect_url, tran_ref: json.tran_ref, cart_id: cartId });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "PayTabs request failed";
-    return res.status(500).json({ error: msg });
+    const msg = e instanceof Error ? e.message : "Network error reaching PayTabs";
+    console.error("[paytabs] fetch error:", msg);
+    return res.status(500).json({ error: `Could not reach PayTabs: ${msg}` });
   }
 });
 
+/* ─── PayTabs Webhook ──────────────────────────────────────────────── */
 app.post("/api/paytabs-webhook", express.text({ type: "*/*" }), async (req, res) => {
   const body = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
   const signature = (req.headers["signature"] || "") as string;
@@ -241,6 +287,22 @@ app.post("/api/paytabs-webhook", express.text({ type: "*/*" }), async (req, res)
       } catch (dbErr) {
         console.error("[db] webhook update error", dbErr);
       }
+
+      // Auto-create MT5 account on successful payment
+      if (status === "paid") {
+        try {
+          const orderRes = await pool.query("SELECT user_id, user_email FROM orders WHERE cart_id = $1", [cartId]);
+          if (orderRes.rows.length > 0) {
+            const { user_id, user_email } = orderRes.rows[0];
+            const existing = await pool.query("SELECT id FROM mt5_accounts WHERE user_id = $1", [user_id]);
+            if (existing.rows.length === 0) {
+              await createMt5AccountInternal(user_id, user_email || "");
+            }
+          }
+        } catch (e) {
+          console.error("[webhook] mt5 auto-create error", e);
+        }
+      }
     } else {
       console.warn("[paytabs:webhook] invalid signature");
       return res.status(401).send("Invalid signature");
@@ -253,6 +315,113 @@ app.post("/api/paytabs-webhook", express.text({ type: "*/*" }), async (req, res)
   res.send("ok");
 });
 
+/* ─── MetaApi MT5 Account ─────────────────────────────────────────── */
+async function createMt5AccountInternal(userId: string, userEmail: string) {
+  const metaapiToken = process.env.METAAPI_TOKEN;
+  const metaapiUrl = (process.env.METAAPI_URL || "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai").replace(/\/$/, "");
+
+  if (!metaapiToken) throw new Error("METAAPI_TOKEN not configured");
+
+  const password = generatePassword();
+  const name = userEmail.split("@")[0] || "Trader";
+
+  const response = await fetch(`${metaapiUrl}/users/current/demo-accounts`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "auth-token": metaapiToken,
+    },
+    body: JSON.stringify({
+      accountType: "cloud-g2",
+      balance: 10000,
+      currency: "USD",
+      leverage: 100,
+      name,
+      email: userEmail || "noreply@fundedplus.com",
+      serverName: "XMGlobal-MT5 2",
+      platform: "mt5",
+      password,
+    }),
+  });
+
+  const text = await response.text();
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`MetaApi non-JSON response (HTTP ${response.status}): ${text.slice(0, 300)}`);
+  }
+
+  if (!response.ok) {
+    throw new Error((data.message as string) || `MetaApi error HTTP ${response.status}`);
+  }
+
+  const login = String(data.login || data.login_id || data.accountLogin || "");
+  const server = String(data.serverName || data.server || "XMGlobal-MT5 2");
+  const accountId = String(data.id || data.accountId || "");
+  const investorPassword = String(data.investorPassword || data.investor_password || "");
+
+  await pool.query(
+    `INSERT INTO mt5_accounts (user_id, user_email, login, password, investor_password, server, account_id, balance)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 10000)
+     ON CONFLICT (user_id) DO UPDATE
+       SET login = EXCLUDED.login,
+           password = EXCLUDED.password,
+           investor_password = EXCLUDED.investor_password,
+           server = EXCLUDED.server,
+           account_id = EXCLUDED.account_id`,
+    [userId, userEmail, login, password, investorPassword, server, accountId]
+  );
+
+  console.log("[mt5] account created for", userEmail, "login:", login);
+  return { login, password, investorPassword, server, balance: 10000, platform: "MT5" };
+}
+
+app.post("/api/create-mt5-account", async (req, res) => {
+  const auth = await verifyClerkToken(req.headers.authorization);
+  if (!auth || !auth.userId) return res.status(401).json({ error: "Unauthorized" });
+
+  // Return existing account if one already exists
+  try {
+    const existing = await pool.query(
+      "SELECT login, password, investor_password, server, balance, platform FROM mt5_accounts WHERE user_id = $1",
+      [auth.userId]
+    );
+    if (existing.rows.length > 0) {
+      return res.json({ account: existing.rows[0] });
+    }
+  } catch (e) {
+    console.error("[mt5] db check error", e);
+  }
+
+  try {
+    const account = await createMt5AccountInternal(auth.userId, auth.email);
+    return res.json({ account });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Failed to create MT5 account";
+    console.error("[mt5] create error:", msg);
+    return res.status(500).json({ error: msg });
+  }
+});
+
+app.get("/api/my-mt5-account", async (req, res) => {
+  const auth = await verifyClerkToken(req.headers.authorization);
+  if (!auth || !auth.userId) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const result = await pool.query(
+      "SELECT login, investor_password, server, balance, platform, created_at FROM mt5_accounts WHERE user_id = $1",
+      [auth.userId]
+    );
+    if (result.rows.length === 0) return res.json({ account: null });
+    return res.json({ account: result.rows[0] });
+  } catch (e) {
+    console.error("[mt5] fetch error", e);
+    return res.status(500).json({ error: "Failed to fetch account" });
+  }
+});
+
+/* ─── Admin endpoints ─────────────────────────────────────────────── */
 app.get("/api/admin/stats", requireAdmin, async (req, res) => {
   try {
     const [usersRes, ordersRes, pendingPayoutsRes, revenueRes] = await Promise.all([
@@ -290,11 +459,9 @@ app.get("/api/admin/payouts", requireAdmin, async (req, res) => {
     const result = await pool.query(
       "SELECT id, user_id, user_email, amount, status, notes, created_at FROM payout_requests ORDER BY created_at DESC LIMIT 200"
     );
-    const pending = await pool.query("SELECT COALESCE(SUM(amount),0) AS total FROM payout_requests WHERE status = 'pending'");
-    const paidMonth = await pool.query(
-      "SELECT COALESCE(SUM(amount),0) AS total FROM payout_requests WHERE status = 'paid' AND date_trunc('month', updated_at) = date_trunc('month', NOW())"
-    );
-    const paidAll = await pool.query("SELECT COALESCE(SUM(amount),0) AS total FROM payout_requests WHERE status = 'paid'");
+    const pending  = await pool.query("SELECT COALESCE(SUM(amount),0) AS total FROM payout_requests WHERE status = 'pending'");
+    const paidMonth = await pool.query("SELECT COALESCE(SUM(amount),0) AS total FROM payout_requests WHERE status = 'paid' AND date_trunc('month', updated_at) = date_trunc('month', NOW())");
+    const paidAll   = await pool.query("SELECT COALESCE(SUM(amount),0) AS total FROM payout_requests WHERE status = 'paid'");
     res.json({
       requests: result.rows,
       pendingTotal: parseFloat(pending.rows[0].total),
@@ -345,6 +512,7 @@ app.post("/api/payout-request", async (req, res) => {
   }
 });
 
+/* ─── Boot ────────────────────────────────────────────────────────── */
 initDb().then(() => {
   if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
     const PORT = process.env.SERVER_PORT || 3001;
