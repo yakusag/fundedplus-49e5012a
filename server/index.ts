@@ -430,14 +430,19 @@ async function sendMt5CredentialsEmail({
 
 async function createMt5AccountInternal(userId: string, userEmail: string) {
   const metaapiToken = process.env.METAAPI_TOKEN;
-  const metaapiUrl = (process.env.METAAPI_URL || "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai").replace(/\/$/, "");
+
+  // METAAPI_URL is the client API (trading data). Demo account creation
+  // always uses the fixed provisioning API endpoint.
+  const provisioningUrl = "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai";
 
   if (!metaapiToken) throw new Error("METAAPI_TOKEN not configured");
 
   const password = generatePassword();
   const name = userEmail.split("@")[0] || "Trader";
 
-  const response = await fetch(`${metaapiUrl}/users/current/demo-accounts`, {
+  console.log("[mt5] creating demo account for", userEmail, "via provisioning API");
+
+  const response = await fetch(`${provisioningUrl}/users/current/demo-accounts`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
