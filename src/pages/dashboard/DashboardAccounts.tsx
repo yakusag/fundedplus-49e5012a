@@ -51,13 +51,14 @@ function StatusBadge({ status, pnlPct, rules }: { status: string | null; pnlPct:
   let label = "Active";
   let cls = "bg-primary/10 text-primary border-primary/20";
 
-  if (status === "passed" || (rules && (pnlPct ?? 0) >= rules.profitTargetPct)) {
+  const pnl = pnlPct ?? 0;
+  if (status === "passed" || (rules && pnl >= rules.profitTargetPct)) {
     label = "Passed ✓"; cls = "bg-success/10 text-success border-success/20";
-  } else if (status === "failed" || (rules && (pnlPct ?? 0) <= -(rules.maxDrawdownPct - 1))) {
+  } else if (status === "failed" || (rules && pnl <= -rules.maxDrawdownPct)) {
     label = "Failed"; cls = "bg-destructive/10 text-destructive border-destructive/20";
-  } else if (status === "at_risk" || (rules && (pnlPct ?? 0) <= -(rules.dailyLossPct))) {
+  } else if (status === "at_risk" || (rules && pnl <= -(rules.maxDrawdownPct * 0.7))) {
     label = "At Risk ⚠"; cls = "bg-orange-500/10 text-orange-400 border-orange-500/20";
-  } else if ((pnlPct ?? 0) > 0) {
+  } else if (pnl > 0) {
     label = "On Track"; cls = "bg-success/10 text-success border-success/20";
   }
 

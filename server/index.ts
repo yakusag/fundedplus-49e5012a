@@ -77,6 +77,8 @@ function regionEndpoint(region: string): string {
   return map[region.toUpperCase()] || map.ARE;
 }
 
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "gunsroll0@gmail.com";
+
 async function verifyClerkToken(authHeader: string | undefined): Promise<{ userId: string; email: string } | null> {
   if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
   const token = authHeader.slice(7);
@@ -86,6 +88,13 @@ async function verifyClerkToken(authHeader: string | undefined): Promise<{ userI
     const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString());
     return { userId: payload.sub || payload.user_id || "", email: payload.email || "" };
   } catch { return null; }
+}
+
+async function requireAdmin(req: express.Request, res: express.Response): Promise<{ userId: string; email: string } | null> {
+  const auth = await verifyClerkToken(req.headers.authorization);
+  if (!auth?.userId) { res.status(401).json({ error: "Unauthorized" }); return null; }
+  if (auth.email !== ADMIN_EMAIL) { res.status(403).json({ error: "Forbidden" }); return null; }
+  return auth;
 }
 
 // ─── PayTabs ────────────────────────────────────────────────
@@ -188,8 +197,8 @@ const CHALLENGE_RULES: Record<string, { balance: number; profitTargetPct: number
 // ─── Account Pool ────────────────────────────────────────────
 
 app.get("/api/account-pool", async (req, res) => {
-  const auth = await verifyClerkToken(req.headers.authorization);
-  if (!auth?.userId) return res.status(401).json({ error: "Unauthorized" });
+  const auth = await requireAdmin(req, res);
+  if (!auth) return;
   try {
     const { rows } = await pool.query(
       `SELECT id, login, server, platform, plan_id, assigned_to, assigned_at, created_at, is_active FROM account_pool ORDER BY created_at DESC`
@@ -199,8 +208,8 @@ app.get("/api/account-pool", async (req, res) => {
 });
 
 app.post("/api/account-pool", async (req, res) => {
-  const auth = await verifyClerkToken(req.headers.authorization);
-  if (!auth?.userId) return res.status(401).json({ error: "Unauthorized" });
+  const auth = await requireAdmin(req, res);
+  if (!auth) return;
   const { login, password, server, platform = "mt5", plan_id } = req.body;
   if (!login || !password || !server) return res.status(400).json({ error: "login, password, server required" });
   try {
@@ -213,10 +222,12 @@ app.post("/api/account-pool", async (req, res) => {
 });
 
 app.delete("/api/account-pool/:id", async (req, res) => {
-  const auth = await verifyClerkToken(req.headers.authorization);
-  if (!auth?.userId) return res.status(401).json({ error: "Unauthorized" });
+  const auth = await requireAdmin(req, res);
+  if (!auth) return;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   try {
-    await pool.query(`DELETE FROM account_pool WHERE id=$1`, [req.params.id]);
+    await pool.query(`DELETE FROM account_pool WHERE id=$1`, [id]);
     return res.json({ success: true });
   } catch (e) { return res.status(500).json({ error: "DB error" }); }
 });
@@ -269,22 +280,30 @@ app.get("/api/my-accounts", async (req, res) => {
   } catch (e) { return res.status(500).json({ error: "DB error" }); }
 });
 
-// ─── Challenge Progress (admin update) ───────────────────────
+// ─── Challenge Progress (admin update only) ──────────────────
 
 app.patch("/api/challenge-progress/:accountId", async (req, res) => {
-  const auth = await verifyClerkToken(req.headers.authorization);
-  if (!auth?.userId) return res.status(401).json({ error: "Unauthorized" });
+  const auth = await requireAdmin(req, res);
+  if (!auth) return;
   const accountId = parseInt(req.params.accountId);
   if (isNaN(accountId)) return res.status(400).json({ error: "Invalid account id" });
   const { current_pnl_pct, status, notes } = req.body;
   try {
+    // Verify the account exists before upserting progress
+    const exists = await pool.query(`SELECT id FROM account_pool WHERE id=$1`, [accountId]);
+    if (exists.rows.length === 0) return res.status(404).json({ error: "Account not found" });
+
+    const ALLOWED_STATUSES = ["active", "at_risk", "passed", "failed"];
+    const safeStatus = ALLOWED_STATUSES.includes(status) ? status : "active";
+    const safePnl = typeof current_pnl_pct === "number" ? current_pnl_pct : parseFloat(current_pnl_pct) || 0;
+
     const { rows } = await pool.query(
       `INSERT INTO challenge_progress (account_pool_id, current_pnl_pct, status, notes, updated_at, updated_by)
        VALUES ($1, $2, $3, $4, NOW(), $5)
        ON CONFLICT (account_pool_id) DO UPDATE
        SET current_pnl_pct=$2, status=$3, notes=$4, updated_at=NOW(), updated_by=$5
        RETURNING *`,
-      [accountId, current_pnl_pct ?? 0, status || "active", notes || null, auth.userId]
+      [accountId, safePnl, safeStatus, notes || null, auth.email]
     );
     return res.json(rows[0]);
   } catch (e) { return res.status(500).json({ error: "DB error" }); }
