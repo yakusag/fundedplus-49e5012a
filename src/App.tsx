@@ -16,6 +16,7 @@ import DashboardChallenges from "@/pages/dashboard/DashboardChallenges";
 import DashboardCheckout from "@/pages/dashboard/DashboardCheckout";
 import DashboardPayouts from "@/pages/dashboard/DashboardPayouts";
 import DashboardProfile from "@/pages/dashboard/DashboardProfile";
+import DashboardAccounts from "@/pages/dashboard/DashboardAccounts";
 
 import AdminLayout from "@/pages/admin/AdminLayout";
 import AdminHome from "@/pages/admin/AdminHome";
@@ -23,6 +24,9 @@ import AdminUsers from "@/pages/admin/AdminUsers";
 import AdminOrders from "@/pages/admin/AdminOrders";
 import AdminPlans from "@/pages/admin/AdminPlans";
 import AdminPayouts from "@/pages/admin/AdminPayouts";
+import AdminGithub from "@/pages/admin/AdminGithub";
+import AdminMetaAPI from "@/pages/admin/AdminMetaAPI";
+import AdminAccountPool from "@/pages/admin/AdminAccountPool";
 
 export default function App() {
   return (
@@ -53,6 +57,7 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardHome />} />
             <Route path="/dashboard/challenges" element={<DashboardChallenges />} />
             <Route path="/dashboard/checkout/:planId" element={<DashboardCheckout />} />
+            <Route path="/dashboard/accounts" element={<DashboardAccounts />} />
             <Route path="/dashboard/payouts" element={<DashboardPayouts />} />
             <Route path="/dashboard/profile" element={<DashboardProfile />} />
           </Route>
@@ -66,6 +71,9 @@ export default function App() {
             <Route path="/admin/orders" element={<AdminOrders />} />
             <Route path="/admin/plans" element={<AdminPlans />} />
             <Route path="/admin/payouts" element={<AdminPayouts />} />
+            <Route path="/admin/github" element={<AdminGithub />} />
+            <Route path="/admin/metaapi" element={<AdminMetaAPI />} />
+            <Route path="/admin/accounts" element={<AdminAccountPool />} />
           </Route>
         </Route>
       </Routes>

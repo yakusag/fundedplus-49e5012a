@@ -1,6 +1,6 @@
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { useUser } from "@clerk/clerk-react";
-import { LayoutDashboard, Users, ShoppingBag, Wallet, Trophy, LogOut, ArrowLeft, TrendingUp, Menu, X } from "lucide-react";
+import { LayoutDashboard, Users, ShoppingBag, Wallet, Trophy, LogOut, ArrowLeft, TrendingUp, Menu, X, Github, Monitor } from "lucide-react";
 import { useState } from "react";
 
 const nav = [
@@ -9,6 +9,8 @@ const nav = [
   { href: "/admin/orders", label: "Orders", icon: ShoppingBag },
   { href: "/admin/plans", label: "Challenges", icon: Trophy },
   { href: "/admin/payouts", label: "Payouts", icon: Wallet },
+  { href: "/admin/accounts", label: "Account Pool", icon: Monitor },
+  { href: "/admin/github", label: "GitHub Sync", icon: Github },
 ];
 
 export default function AdminLayout() {

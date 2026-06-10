@@ -1,47 +1,11 @@
-import { useEffect, useState } from "react";
-import { useAuth } from "@clerk/clerk-react";
 import { Users, ShoppingBag, Wallet, DollarSign, TrendingUp } from "lucide-react";
 
-interface Stats {
-  totalUsers: number;
-  totalOrders: number;
-  pendingPayouts: number;
-  revenue: number;
-}
-
 export default function AdminHome() {
-  const { getToken } = useAuth();
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const token = await getToken();
-        const res = await fetch("/api/admin/stats", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!cancelled && res.ok) setStats(await res.json());
-      } catch {
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [getToken]);
-
-  const fmt = (n: number | undefined) =>
-    loading ? "…" : n === undefined ? "—" : n.toLocaleString();
-
-  const fmtMoney = (n: number | undefined) =>
-    loading ? "…" : n === undefined ? "—" : `$${n.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
   const cards = [
-    { title: "Total users", value: fmt(stats?.totalUsers), icon: Users, color: "text-primary" },
-    { title: "Total orders", value: fmt(stats?.totalOrders), icon: ShoppingBag, color: "text-success" },
-    { title: "Pending payouts", value: fmt(stats?.pendingPayouts), icon: Wallet, color: "text-yellow-400" },
-    { title: "Revenue (all-time)", value: fmtMoney(stats?.revenue), icon: DollarSign, color: "text-primary" },
+    { title: "Total users", value: "—", icon: Users, color: "text-primary" },
+    { title: "Total orders", value: "—", icon: ShoppingBag, color: "text-success" },
+    { title: "Pending payouts", value: "—", icon: Wallet, color: "text-yellow-400" },
+    { title: "Revenue (all-time)", value: "—", icon: DollarSign, color: "text-primary" },
   ];
 
   return (
@@ -68,10 +32,10 @@ export default function AdminHome() {
       <div className="glass rounded-2xl p-6 border border-primary/10">
         <div className="flex items-center gap-3 mb-3">
           <TrendingUp className="h-5 w-5 text-primary" />
-          <h2 className="font-display font-semibold">Live data</h2>
+          <h2 className="font-display font-semibold">Getting started</h2>
         </div>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          Stats are pulled in real time from the database. Admin access is restricted to{" "}
+          Connect a database to see live stats. Admin access is restricted to{" "}
           <code className="text-primary bg-primary/10 px-1.5 py-0.5 rounded text-xs">gunsroll0@gmail.com</code>.
           Use the navigation to manage users, orders, and payouts.
         </p>

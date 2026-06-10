@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { SignedIn, SignedOut, UserButton, useAuth } from "@clerk/clerk-react";
-import { Menu, X, TrendingUp } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -19,9 +19,7 @@ export default function Navbar() {
     <header className="sticky top-0 z-50 border-b border-white/5 bg-background/80 backdrop-blur-xl">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2 font-display font-bold text-lg">
-          <div className="h-8 w-8 rounded-lg bg-gradient-primary flex items-center justify-center shadow-glow-sm">
-            <TrendingUp className="h-4 w-4 text-[hsl(222,47%,8%)]" />
-          </div>
+          <img src="/logo.png" alt="FundedPlus" className="h-9 w-9 object-contain" />
           <span className="text-gradient">FundedPlus</span>
         </Link>
 

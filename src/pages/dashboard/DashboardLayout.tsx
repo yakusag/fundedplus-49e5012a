@@ -1,12 +1,13 @@
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { useUser } from "@clerk/clerk-react";
-import { LayoutDashboard, ShoppingBag, Wallet, User, LogOut, Shield, TrendingUp, Menu, X } from "lucide-react";
+import { LayoutDashboard, ShoppingBag, Wallet, User, LogOut, Shield, TrendingUp, Menu, X, Monitor } from "lucide-react";
 import { useState } from "react";
 import { ADMIN_EMAIL } from "@/lib/utils";
 
 const nav = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/challenges", label: "Challenges", icon: ShoppingBag },
+  { href: "/dashboard/accounts", label: "My Accounts", icon: Monitor },
   { href: "/dashboard/payouts", label: "Payouts", icon: Wallet },
   { href: "/dashboard/profile", label: "Profile", icon: User },
 ];
@@ -25,9 +26,7 @@ export default function DashboardLayout() {
   const Sidebar = () => (
     <div className="flex flex-col h-full">
       <Link to="/" className="flex items-center gap-2 font-display font-bold text-lg mb-8">
-        <div className="h-8 w-8 rounded-lg bg-gradient-primary flex items-center justify-center shadow-glow-sm">
-          <TrendingUp className="h-4 w-4 text-[hsl(222,47%,8%)]" />
-        </div>
+        <img src="/logo.png" alt="FundedPlus" className="h-8 w-8 object-contain" />
         <span className="text-gradient">FundedPlus</span>
       </Link>
 
@@ -80,9 +79,7 @@ export default function DashboardLayout() {
       {/* Mobile header */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-40 border-b border-white/5 bg-background/90 backdrop-blur px-4 h-14 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2 font-display font-bold">
-          <div className="h-7 w-7 rounded-lg bg-gradient-primary flex items-center justify-center">
-            <TrendingUp className="h-3.5 w-3.5 text-[hsl(222,47%,8%)]" />
-          </div>
+          <img src="/logo.png" alt="FundedPlus" className="h-7 w-7 object-contain" />
           <span className="text-gradient">FundedPlus</span>
         </Link>
         <button onClick={() => setMobileOpen(!mobileOpen)} className="text-muted-foreground">

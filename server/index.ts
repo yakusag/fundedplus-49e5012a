@@ -1,70 +1,69 @@
 import express from "express";
 import cors from "cors";
-import { createHmac, timingSafeEqual, randomBytes } from "crypto";
-import { createRemoteJWKSet, jwtVerify } from "jose";
-import { Resend } from "resend";
+import { createHmac, timingSafeEqual } from "crypto";
+import path from "path";
+import { fileURLToPath } from "url";
+import nodemailer from "nodemailer";
 import pool from "./db.js";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+function createMailer() {
+  const host = process.env.SMTP_HOST;
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+  if (!host || !user || !pass) return null;
+  return nodemailer.createTransport({
+    host,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: process.env.SMTP_PORT === "465",
+    auth: { user, pass },
+  });
+}
 
-export const app = express();
+async function sendCredentialsEmail(to: string, login: string, password: string, server: string, platform: string) {
+  const mailer = createMailer();
+  if (!mailer) { console.log("[email] SMTP not configured — skipping email to", to); return; }
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const subject = "Your FundedPlus Trading Account is Ready 🚀";
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;background:#0f1117;color:#e2e8f0;border-radius:12px;overflow:hidden">
+      <div style="background:linear-gradient(135deg,#7c3aed,#4f46e5);padding:32px 24px;text-align:center">
+        <h1 style="margin:0;font-size:24px;color:#fff">FundedPlus</h1>
+        <p style="margin:8px 0 0;color:rgba(255,255,255,0.8);font-size:14px">Your trading account is ready</p>
+      </div>
+      <div style="padding:32px 24px">
+        <p style="font-size:16px;margin:0 0 24px">Hi Trader 👋,</p>
+        <p style="color:#94a3b8;margin:0 0 24px">Your <strong style="color:#a78bfa">${platform.toUpperCase()}</strong> trading account has been activated. Here are your credentials:</p>
+        <div style="background:#1e1e2e;border-radius:8px;padding:20px;margin-bottom:24px">
+          <table style="width:100%;border-collapse:collapse">
+            <tr><td style="padding:8px 0;color:#94a3b8;width:100px">Platform</td><td style="padding:8px 0;font-weight:bold;color:#e2e8f0">${platform.toUpperCase()}</td></tr>
+            <tr><td style="padding:8px 0;color:#94a3b8">Login</td><td style="padding:8px 0;font-weight:bold;color:#e2e8f0;font-family:monospace">${login}</td></tr>
+            <tr><td style="padding:8px 0;color:#94a3b8">Password</td><td style="padding:8px 0;font-weight:bold;color:#e2e8f0;font-family:monospace">${password}</td></tr>
+            <tr><td style="padding:8px 0;color:#94a3b8">Server</td><td style="padding:8px 0;font-weight:bold;color:#e2e8f0;font-family:monospace">${server}</td></tr>
+          </table>
+        </div>
+        <p style="color:#94a3b8;font-size:14px;margin:0 0 8px"><strong style="color:#e2e8f0">How to connect:</strong></p>
+        <p style="color:#94a3b8;font-size:14px;margin:0 0 24px">Open ${platform.toUpperCase()} → File → Open an Account → search for <strong style="color:#a78bfa">${server}</strong> → enter your login and password.</p>
+        <p style="color:#64748b;font-size:12px;margin:0">Please keep your credentials safe and do not share them. Contact support if you have any issues.</p>
+      </div>
+      <div style="padding:16px 24px;border-top:1px solid #1e293b;text-align:center">
+        <p style="color:#475569;font-size:12px;margin:0">© ${new Date().getFullYear()} FundedPlus. All rights reserved.</p>
+      </div>
+    </div>
+  `;
+  try {
+    await mailer.sendMail({ from, to, subject, html });
+    console.log("[email] Credentials sent to", to);
+  } catch (e) { console.error("[email] Failed to send:", e); }
+}
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
-const ADMIN_EMAILS = new Set(
-  (process.env.ADMIN_EMAILS || "gunsroll0@gmail.com")
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean)
-);
-
-const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
-
-function getJWKS(issuer: string) {
-  if (!jwksCache.has(issuer)) {
-    jwksCache.set(issuer, createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`)));
-  }
-  return jwksCache.get(issuer)!;
-}
-
-interface ClerkAuth {
-  userId: string;
-  email: string;
-}
-
-async function verifyClerkToken(authHeader: string | undefined): Promise<ClerkAuth | null> {
-  if (!authHeader?.startsWith("Bearer ")) return null;
-  const token = authHeader.slice(7);
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const unverifiedPayload = JSON.parse(Buffer.from(parts[1], "base64url").toString()) as {
-      iss?: string;
-      sub?: string;
-      email?: string;
-    };
-    const issuer = unverifiedPayload.iss;
-    if (!issuer || !issuer.startsWith("https://")) return null;
-
-    const JWKS = getJWKS(issuer);
-    const { payload } = await jwtVerify(token, JWKS, { issuer });
-
-    const userId = (payload.sub as string) || "";
-    const email = (payload["email"] as string) || "";
-    if (!userId) return null;
-    return { userId, email };
-  } catch {
-    return null;
-  }
-}
-
-async function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const auth = await verifyClerkToken(req.headers.authorization);
-  if (!auth) return res.status(401).json({ error: "Unauthorized" });
-  if (!ADMIN_EMAILS.has(auth.email.toLowerCase())) return res.status(403).json({ error: "Forbidden" });
-  next();
-}
+// ─── Helpers ────────────────────────────────────────────────
 
 function regionEndpoint(region: string): string {
   const map: Record<string, string> = {
@@ -78,642 +77,183 @@ function regionEndpoint(region: string): string {
   return map[region.toUpperCase()] || map.ARE;
 }
 
-function generatePassword(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-  const special = "!@#$%";
-  let pwd = "";
-  for (let i = 0; i < 10; i++) pwd += chars[Math.floor(Math.random() * chars.length)];
-  pwd += special[Math.floor(Math.random() * special.length)];
-  pwd += Math.floor(Math.random() * 90 + 10);
-  return pwd;
-}
-
-async function ensureUserRegistered(userId: string, email: string) {
+async function verifyClerkToken(authHeader: string | undefined): Promise<{ userId: string; email: string } | null> {
+  if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
+  const token = authHeader.slice(7);
   try {
-    await pool.query(
-      `INSERT INTO users_registry (user_id, email, last_seen)
-       VALUES ($1, $2, NOW())
-       ON CONFLICT (user_id) DO UPDATE SET last_seen = NOW(), email = EXCLUDED.email`,
-      [userId, email]
-    );
-  } catch (e) {
-    console.error("[db] ensureUserRegistered error", e);
-  }
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString());
+    return { userId: payload.sub || payload.user_id || "", email: payload.email || "" };
+  } catch { return null; }
 }
 
-async function initDb() {
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS orders (
-        id SERIAL PRIMARY KEY,
-        cart_id VARCHAR(255) UNIQUE NOT NULL,
-        user_id VARCHAR(255) NOT NULL,
-        user_email VARCHAR(255),
-        plan_id VARCHAR(50),
-        plan_label VARCHAR(50),
-        amount DECIMAL(10,2),
-        status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending','paid','failed')),
-        tran_ref VARCHAR(255),
-        raw_payload JSONB,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
-      );
+// ─── PayTabs ────────────────────────────────────────────────
 
-      CREATE TABLE IF NOT EXISTS payout_requests (
-        id SERIAL PRIMARY KEY,
-        user_id VARCHAR(255) NOT NULL,
-        user_email VARCHAR(255),
-        amount DECIMAL(10,2) NOT NULL CHECK (amount > 0),
-        status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending','paid','rejected')),
-        notes TEXT,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
-      );
-
-      CREATE TABLE IF NOT EXISTS users_registry (
-        id SERIAL PRIMARY KEY,
-        user_id VARCHAR(255) UNIQUE NOT NULL,
-        email VARCHAR(255),
-        first_seen TIMESTAMP DEFAULT NOW(),
-        last_seen TIMESTAMP DEFAULT NOW()
-      );
-
-      CREATE TABLE IF NOT EXISTS mt5_accounts (
-        id SERIAL PRIMARY KEY,
-        user_id VARCHAR(255) UNIQUE NOT NULL,
-        user_email VARCHAR(255),
-        login VARCHAR(100),
-        password VARCHAR(255),
-        investor_password VARCHAR(255),
-        server VARCHAR(255),
-        account_id VARCHAR(255),
-        balance DECIMAL(10,2) DEFAULT 10000,
-        platform VARCHAR(10) DEFAULT 'MT5',
-        created_at TIMESTAMP DEFAULT NOW()
-      );
-    `);
-    console.log("[db] Schema ready");
-  } catch (e) {
-    console.error("[db] initDb error", e);
-  }
-}
-
-/* ─── PayTabs Payment ──────────────────────────────────────────────── */
 app.post("/api/paytabs-payment", async (req, res) => {
   const auth = await verifyClerkToken(req.headers.authorization);
-  if (!auth || !auth.userId) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
-  await ensureUserRegistered(auth.userId, auth.email);
+  if (!auth?.userId) return res.status(401).json({ error: "Unauthorized" });
 
   const profileId = process.env.PAYTABS_PROFILE_ID;
   const serverKey = process.env.PAYTABS_SERVER_KEY;
-  const region = process.env.PAYTABS_REGION || "GLOBAL";
+  const region = process.env.PAYTABS_REGION || "ARE";
+  if (!profileId || !serverKey) return res.status(500).json({ error: "PayTabs not configured." });
 
-  if (!profileId || !serverKey) {
-    return res.status(500).json({ error: "PayTabs is not configured. Check PAYTABS_PROFILE_ID and PAYTABS_SERVER_KEY." });
-  }
-
-  const { planId } = req.body;
+  const { planId, platform = "mt5" } = req.body;
   const plans: Record<string, { label: string; price: number }> = {
-    "5k":   { label: "$5K",   price: 39  },
-    "10k":  { label: "$10K",  price: 69  },
-    "25k":  { label: "$25K",  price: 139 },
-    "50k":  { label: "$50K",  price: 229 },
-    "100k": { label: "$100K", price: 389 },
-    "200k": { label: "$200K", price: 749 },
+    "5k": { label: "$5K", price: 39 }, "10k": { label: "$10K", price: 69 },
+    "25k": { label: "$25K", price: 139 }, "50k": { label: "$50K", price: 229 },
+    "100k": { label: "$100K", price: 389 }, "200k": { label: "$200K", price: 749 },
   };
   const plan = plans[planId];
-  if (!plan) return res.status(400).json({ error: "Unknown plan ID." });
+  if (!plan) return res.status(400).json({ error: "Unknown plan." });
 
-  const origin = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : `https://${process.env.REPLIT_DEV_DOMAIN || "localhost:5000"}`;
+  const origin = process.env.REPLIT_DEV_DOMAIN
+    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+    : `http://localhost:${PORT}`;
 
   const cartId = `fp_${auth.userId}_${planId}_${Date.now()}`;
-  const endpoint = `${regionEndpoint(region)}/payment/request`;
+
+  try {
+    await pool.query(
+      `INSERT INTO user_orders (user_id, user_email, plan_id, cart_id, status, platform)
+       VALUES ($1,$2,$3,$4,'pending',$5) ON CONFLICT (cart_id) DO NOTHING`,
+      [auth.userId, auth.email, planId, cartId, platform]
+    );
+  } catch (e) { console.error("DB order insert error", e); }
 
   const body = {
-    profile_id: Number(profileId),
-    tran_type: "sale",
-    tran_class: "ecom",
-    cart_id: cartId,
-    cart_description: `FundedPlus ${plan.label} Challenge`,
-    cart_currency: "USD",
-    cart_amount: plan.price,
+    profile_id: Number(profileId), tran_type: "sale", tran_class: "ecom",
+    cart_id: cartId, cart_description: `FundedPlus ${plan.label} challenge`,
+    cart_currency: "USD", cart_amount: plan.price,
     customer_details: {
-      name: auth.email.split("@")[0] || "Trader",
-      email: auth.email || "noreply@fundedplus.com",
-      street1: "N/A",
-      city: "Dubai",
-      country: "AE",
-      zip: "00000",
+      name: auth.email.split("@")[0] || "Trader", email: auth.email || "noreply@fundedplus.com",
+      street1: "N/A", city: "N/A", country: "AE", zip: "00000",
     },
-    return: `${origin}/dashboard?paid=1&plan=${planId}`,
+    return: `${origin}/dashboard?paid=1&planId=${planId}&platform=${platform}`,
     callback: `${origin}/api/paytabs-webhook`,
   };
 
-  console.log("[paytabs] initiating payment", { planId, amount: plan.price, region, endpoint });
-
   try {
-    const response = await fetch(endpoint, {
+    const response = await fetch(`${regionEndpoint(region)}/payment/request`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: serverKey,
-      },
+      headers: { "Content-Type": "application/json", Authorization: serverKey },
       body: JSON.stringify(body),
     });
-
-    const text = await response.text();
-    let json: { redirect_url?: string; tran_ref?: string; message?: string; code?: string };
-    try {
-      json = JSON.parse(text);
-    } catch {
-      console.error("[paytabs] non-JSON response:", text.slice(0, 500));
-      return res.status(500).json({ error: `PayTabs returned non-JSON (status ${response.status}). Check your region and credentials.` });
-    }
-
-    console.log("[paytabs] response", response.status, json.message || json.code || "ok");
-
-    if (!response.ok || !json.redirect_url) {
-      return res.status(500).json({
-        error: json.message || `PayTabs error (HTTP ${response.status}). Verify profile ID, server key and region.`,
-      });
-    }
-
-    try {
-      await pool.query(
-        `INSERT INTO orders (cart_id, user_id, user_email, plan_id, plan_label, amount, status, tran_ref)
-         VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
-         ON CONFLICT (cart_id) DO NOTHING`,
-        [cartId, auth.userId, auth.email, planId, plan.label, plan.price, json.tran_ref || null]
-      );
-    } catch (dbErr) {
-      console.error("[db] order insert error", dbErr);
-    }
-
+    const json = await response.json() as { redirect_url?: string; tran_ref?: string; message?: string };
+    if (!response.ok || !json.redirect_url) return res.status(500).json({ error: json.message || "PayTabs error" });
     return res.json({ redirect_url: json.redirect_url, tran_ref: json.tran_ref, cart_id: cartId });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Network error reaching PayTabs";
-    console.error("[paytabs] fetch error:", msg);
-    return res.status(500).json({ error: `Could not reach PayTabs: ${msg}` });
+    return res.status(500).json({ error: e instanceof Error ? e.message : "PayTabs request failed" });
   }
 });
 
-/* ─── PayTabs Webhook ──────────────────────────────────────────────── */
 app.post("/api/paytabs-webhook", express.text({ type: "*/*" }), async (req, res) => {
   const body = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
   const signature = (req.headers["signature"] || "") as string;
   const serverKey = process.env.PAYTABS_SERVER_KEY;
-
   if (!serverKey) return res.status(500).send("Not configured");
 
   try {
     const expected = createHmac("sha256", serverKey).update(body).digest("hex");
-    const sig = Buffer.from(signature);
-    const exp = Buffer.from(expected);
+    const sig = Buffer.from(signature); const exp = Buffer.from(expected);
     if (signature && sig.length === exp.length && timingSafeEqual(sig, exp)) {
       const payload = JSON.parse(body);
-      const cartId = payload.cart_id as string;
-      const status = payload.payment_result?.response_status === "A" ? "paid" : "failed";
-      console.log("[paytabs:webhook] verified", cartId, status);
-
-      try {
+      const status = payload.payment_result?.response_status;
+      console.log("[webhook]", payload.cart_id, status);
+      if (status === "A") {
         await pool.query(
-          `UPDATE orders
-           SET status = $1, tran_ref = $2, raw_payload = $3, updated_at = NOW()
-           WHERE cart_id = $4`,
-          [status, payload.tran_ref || null, JSON.stringify(payload), cartId]
+          `UPDATE user_orders SET status='paid', tran_ref=$1 WHERE cart_id=$2`,
+          [payload.tran_ref, payload.cart_id]
         );
-      } catch (dbErr) {
-        console.error("[db] webhook update error", dbErr);
-      }
-
-      if (status === "paid") {
-        try {
-          const orderRes = await pool.query("SELECT user_id, user_email FROM orders WHERE cart_id = $1", [cartId]);
-          if (orderRes.rows.length > 0) {
-            const { user_id, user_email } = orderRes.rows[0];
-            const existing = await pool.query("SELECT id FROM mt5_accounts WHERE user_id = $1", [user_id]);
-            if (existing.rows.length === 0) {
-              await createMt5AccountInternal(user_id, user_email || "");
-            }
-          }
-        } catch (e) {
-          console.error("[webhook] mt5 auto-create error", e);
-        }
       }
     } else {
-      console.warn("[paytabs:webhook] invalid signature");
       return res.status(401).send("Invalid signature");
     }
-  } catch (e) {
-    console.error("[paytabs:webhook] error", e);
-    return res.status(500).send("Error");
-  }
-
+  } catch (e) { return res.status(500).send("Error"); }
   res.send("ok");
 });
 
-/* ─── MetaApi MT5 Account ─────────────────────────────────────────── */
-async function sendMt5CredentialsEmail({
-  email,
-  login,
-  password,
-  server,
-}: {
-  email: string;
-  login: string;
-  password: string;
-  server: string;
-}) {
-  const fromAddress = process.env.RESEND_FROM_EMAIL || "FundedPlus <onboarding@resend.dev>";
+// ─── Account Pool ────────────────────────────────────────────
 
-  const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Your MT5 Account Credentials</title>
-</head>
-<body style="margin:0;padding:0;background:#0f0f0f;font-family:'Segoe UI',Arial,sans-serif;color:#e5e5e5;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0f0f;padding:40px 0;">
-    <tr>
-      <td align="center">
-        <table width="560" cellpadding="0" cellspacing="0" style="background:#1a1a1a;border-radius:12px;overflow:hidden;border:1px solid #2a2a2a;max-width:560px;width:100%;">
-          <tr>
-            <td style="background:linear-gradient(135deg,#00c896,#00a878);padding:32px 40px;text-align:center;">
-              <h1 style="margin:0;font-size:24px;font-weight:700;color:#ffffff;">FundedPlus</h1>
-              <p style="margin:8px 0 0;font-size:14px;color:rgba(255,255,255,0.85);">Your MT5 Trading Account is Ready</p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:36px 40px;">
-              <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#cccccc;">
-                Congratulations! Your MetaTrader 5 demo account has been created.
-              </p>
-              <table width="100%" cellpadding="0" cellspacing="0" style="background:#111111;border:1px solid #2a2a2a;border-radius:8px;margin-bottom:28px;">
-                <tr>
-                  <td style="padding:20px 24px;">
-                    <p style="margin:0 0 16px;font-size:12px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#00c896;">Account Details</p>
-                    <table width="100%" cellpadding="0" cellspacing="0">
-                      <tr>
-                        <td style="padding:8px 0;border-bottom:1px solid #1f1f1f;font-size:13px;color:#888888;width:140px;">Login</td>
-                        <td style="padding:8px 0;border-bottom:1px solid #1f1f1f;font-size:15px;font-weight:600;color:#ffffff;font-family:monospace;">${login}</td>
-                      </tr>
-                      <tr>
-                        <td style="padding:8px 0;border-bottom:1px solid #1f1f1f;font-size:13px;color:#888888;">Password</td>
-                        <td style="padding:8px 0;border-bottom:1px solid #1f1f1f;font-size:15px;font-weight:600;color:#ffffff;font-family:monospace;">${password}</td>
-                      </tr>
-                      <tr>
-                        <td style="padding:8px 0;font-size:13px;color:#888888;">Server</td>
-                        <td style="padding:8px 0;font-size:15px;font-weight:600;color:#ffffff;font-family:monospace;">${server}</td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:20px 40px;border-top:1px solid #2a2a2a;text-align:center;">
-              <p style="margin:0;font-size:12px;color:#444444;">© ${new Date().getFullYear()} FundedPlus. All rights reserved.</p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
-
-  const { error } = await resend.emails.send({
-    from: fromAddress,
-    to: email,
-    subject: "Your FundedPlus MT5 Account Credentials",
-    html,
-  });
-
-  if (error) throw new Error(`Resend error: ${JSON.stringify(error)}`);
-  console.log("[email] MT5 credentials sent to", email);
-}
-
-async function sendPayoutStatusEmail({
-  email,
-  amount,
-  status,
-  notes,
-}: {
-  email: string;
-  amount: number;
-  status: string;
-  notes?: string | null;
-}) {
-  const fromAddress = process.env.RESEND_FROM_EMAIL || "FundedPlus <onboarding@resend.dev>";
-  const isApproved = status === "paid";
-  const statusLabel = isApproved ? "Approved" : "Rejected";
-  const statusColor = isApproved ? "#00c896" : "#e05252";
-
-  const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8" /><title>Payout ${statusLabel}</title></head>
-<body style="margin:0;padding:0;background:#0f0f0f;font-family:'Segoe UI',Arial,sans-serif;color:#e5e5e5;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
-    <tr><td align="center">
-      <table width="560" cellpadding="0" cellspacing="0" style="background:#1a1a1a;border-radius:12px;border:1px solid #2a2a2a;">
-        <tr>
-          <td style="background:linear-gradient(135deg,${statusColor},${isApproved ? "#00a878" : "#c04040"});padding:32px 40px;text-align:center;">
-            <h1 style="margin:0;color:#fff;">FundedPlus</h1>
-            <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);">Payout Request ${statusLabel}</p>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:36px 40px;">
-            <table width="100%" cellpadding="0" cellspacing="0" style="background:#111;border:1px solid #2a2a2a;border-radius:8px;">
-              <tr><td style="padding:20px 24px;">
-                <tr>
-                  <td style="padding:8px 0;border-bottom:1px solid #1f1f1f;color:#888;width:140px;">Amount</td>
-                  <td style="padding:8px 0;border-bottom:1px solid #1f1f1f;font-weight:600;color:#fff;">$${amount.toFixed(2)}</td>
-                </tr>
-                <tr>
-                  <td style="padding:8px 0;color:#888;">Status</td>
-                  <td style="padding:8px 0;font-weight:600;color:${statusColor};">${statusLabel}</td>
-                </tr>
-                ${notes ? `<tr><td style="padding:8px 0;color:#888;">Notes</td><td style="padding:8px 0;color:#ccc;">${notes}</td></tr>` : ""}
-              </td></tr>
-            </table>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:20px 40px;border-top:1px solid #2a2a2a;text-align:center;">
-            <p style="margin:0;font-size:12px;color:#444;">© ${new Date().getFullYear()} FundedPlus.</p>
-          </td>
-        </tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
-
-  const { error } = await resend.emails.send({
-    from: fromAddress,
-    to: email,
-    subject: `FundedPlus Payout Request ${statusLabel}`,
-    html,
-  });
-
-  if (error) throw new Error(`Resend error: ${JSON.stringify(error)}`);
-  console.log("[email] payout status email sent to", email, "status:", status);
-}
-
-async function createMt5AccountInternal(userId: string, userEmail: string) {
-  const metaapiToken = process.env.METAAPI_TOKEN;
-  const provisioningUrl = "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai";
-
-  if (!metaapiToken) throw new Error("METAAPI_TOKEN not configured");
-
-  const password = generatePassword();
-  const name = userEmail.split("@")[0] || "Trader";
-
-  console.log("[mt5] creating demo account for", userEmail);
-
-  const response = await fetch(`${provisioningUrl}/users/current/demo-accounts`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "auth-token": metaapiToken,
-    },
-    body: JSON.stringify({
-      accountType: "cloud-g2",
-      balance: 10000,
-      currency: "USD",
-      leverage: 100,
-      name,
-      email: userEmail || "noreply@fundedplus.com",
-      serverName: "XMGlobal-MT5 2",
-      platform: "mt5",
-      password,
-    }),
-  });
-
-  const text = await response.text();
-  let data: Record<string, unknown>;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error(`MetaApi non-JSON response (HTTP ${response.status}): ${text.slice(0, 300)}`);
-  }
-
-  if (!response.ok) {
-    throw new Error((data.message as string) || `MetaApi error HTTP ${response.status}`);
-  }
-
-  const login = String(data.login || data.login_id || data.accountLogin || "");
-  const server = String(data.serverName || data.server || "XMGlobal-MT5 2");
-  const accountId = String(data.id || data.accountId || "");
-  const investorPassword = String(data.investorPassword || data.investor_password || "");
-
-  await pool.query(
-    `INSERT INTO mt5_accounts (user_id, user_email, login, password, investor_password, server, account_id, balance)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 10000)
-     ON CONFLICT (user_id) DO UPDATE
-       SET login = EXCLUDED.login,
-           password = EXCLUDED.password,
-           investor_password = EXCLUDED.investor_password,
-           server = EXCLUDED.server,
-           account_id = EXCLUDED.account_id`,
-    [userId, userEmail, login, password, investorPassword, server, accountId]
-  );
-
-  console.log("[mt5] account created for", userEmail, "login:", login);
-
-  try {
-    await sendMt5CredentialsEmail({ email: userEmail, login, password, server });
-  } catch (emailErr) {
-    console.error("[mt5] failed to send credentials email:", emailErr);
-  }
-
-  return { login, password, investorPassword, server, balance: 10000, platform: "MT5" };
-}
-
-/* ─── MT5 Routes ──────────────────────────────────────────────────── */
-app.post("/api/create-mt5-account", async (req, res) => {
+app.get("/api/account-pool", async (req, res) => {
   const auth = await verifyClerkToken(req.headers.authorization);
-  if (!auth || !auth.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!auth?.userId) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, login, server, platform, plan_id, assigned_to, assigned_at, created_at, is_active FROM account_pool ORDER BY created_at DESC`
+    );
+    return res.json(rows);
+  } catch (e) { return res.status(500).json({ error: "DB error" }); }
+});
 
+app.post("/api/account-pool", async (req, res) => {
+  const auth = await verifyClerkToken(req.headers.authorization);
+  if (!auth?.userId) return res.status(401).json({ error: "Unauthorized" });
+  const { login, password, server, platform = "mt5", plan_id } = req.body;
+  if (!login || !password || !server) return res.status(400).json({ error: "login, password, server required" });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO account_pool (login, password, server, platform, plan_id) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+      [login, password, server, platform, plan_id || null]
+    );
+    return res.json(rows[0]);
+  } catch (e) { return res.status(500).json({ error: "DB error" }); }
+});
+
+app.delete("/api/account-pool/:id", async (req, res) => {
+  const auth = await verifyClerkToken(req.headers.authorization);
+  if (!auth?.userId) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    await pool.query(`DELETE FROM account_pool WHERE id=$1`, [req.params.id]);
+    return res.json({ success: true });
+  } catch (e) { return res.status(500).json({ error: "DB error" }); }
+});
+
+app.post("/api/assign-account", async (req, res) => {
+  const auth = await verifyClerkToken(req.headers.authorization);
+  if (!auth?.userId) return res.status(401).json({ error: "Unauthorized" });
+  const { platform = "mt5" } = req.body;
   try {
     const existing = await pool.query(
-      "SELECT login, password, investor_password, server, balance, platform FROM mt5_accounts WHERE user_id = $1",
+      `SELECT ap.* FROM account_pool ap WHERE ap.assigned_to=$1 AND ap.is_active=true LIMIT 1`,
       [auth.userId]
     );
     if (existing.rows.length > 0) {
-      return res.json({ account: existing.rows[0] });
+      const a = existing.rows[0];
+      return res.json({ login: a.login, password: a.password, server: a.server, platform: a.platform, already: true });
     }
-  } catch (e) {
-    console.error("[mt5] db check error", e);
-  }
-
-  try {
-    const account = await createMt5AccountInternal(auth.userId, auth.email);
-    return res.json({ account });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "Failed to create MT5 account";
-    console.error("[mt5] create error:", msg);
-    return res.status(500).json({ error: msg });
-  }
+    const available = await pool.query(
+      `UPDATE account_pool SET assigned_to=$1, assigned_at=NOW()
+       WHERE id = (SELECT id FROM account_pool WHERE assigned_to IS NULL AND platform=$2 AND is_active=true ORDER BY created_at ASC LIMIT 1)
+       RETURNING *`,
+      [auth.userId, platform]
+    );
+    if (available.rows.length === 0) return res.status(404).json({ error: "no_accounts", message: "No available accounts right now. Contact support." });
+    const a = available.rows[0];
+    if (auth.email) {
+      sendCredentialsEmail(auth.email, a.login, a.password, a.server, a.platform).catch(() => {});
+    }
+    return res.json({ login: a.login, password: a.password, server: a.server, platform: a.platform });
+  } catch (e) { return res.status(500).json({ error: "DB error" }); }
 });
 
-app.get("/api/my-mt5-account", async (req, res) => {
+app.get("/api/my-accounts", async (req, res) => {
   const auth = await verifyClerkToken(req.headers.authorization);
-  if (!auth || !auth.userId) return res.status(401).json({ error: "Unauthorized" });
-
+  if (!auth?.userId) return res.status(401).json({ error: "Unauthorized" });
   try {
-    const result = await pool.query(
-      "SELECT login, investor_password, server, balance, platform, created_at FROM mt5_accounts WHERE user_id = $1",
+    const { rows } = await pool.query(
+      `SELECT login, password, server, platform, plan_id, assigned_at FROM account_pool WHERE assigned_to=$1 AND is_active=true`,
       [auth.userId]
     );
-    if (result.rows.length === 0) return res.json({ account: null });
-    return res.json({ account: result.rows[0] });
-  } catch (e) {
-    console.error("[mt5] fetch error", e);
-    return res.status(500).json({ error: "Failed to fetch account" });
-  }
+    return res.json(rows);
+  } catch (e) { return res.status(500).json({ error: "DB error" }); }
 });
 
-// ✅ FIX: Route that frontend calls
-app.get("/users/current/demo-accounts", async (req, res) => {
-  const auth = await verifyClerkToken(req.headers.authorization);
-  if (!auth || !auth.userId) return res.status(401).json({ error: "Unauthorized" });
+// ─── Static (production) ─────────────────────────────────────
 
-  try {
-    const result = await pool.query(
-      "SELECT login, investor_password, server, balance, platform, created_at FROM mt5_accounts WHERE user_id = $1",
-      [auth.userId]
-    );
-    if (result.rows.length === 0) return res.json({ accounts: [] });
-    return res.json({ accounts: result.rows });
-  } catch (e) {
-    console.error("[demo-accounts] fetch error", e);
-    return res.status(500).json({ error: "Failed to fetch accounts" });
-  }
-});
+const distPath = path.join(__dirname, "../dist");
+app.use(express.static(distPath));
+app.get("*", (_req, res) => res.sendFile(path.join(distPath, "index.html")));
 
-/* ─── Admin endpoints ─────────────────────────────────────────────── */
-app.get("/api/admin/stats", requireAdmin, async (req, res) => {
-  try {
-    const [usersRes, ordersRes, pendingPayoutsRes, revenueRes] = await Promise.all([
-      pool.query("SELECT COUNT(*) AS count FROM users_registry"),
-      pool.query("SELECT COUNT(*) AS count FROM orders"),
-      pool.query("SELECT COUNT(*) AS count FROM payout_requests WHERE status = 'pending'"),
-      pool.query("SELECT COALESCE(SUM(amount), 0) AS total FROM orders WHERE status = 'paid'"),
-    ]);
-    res.json({
-      totalUsers: parseInt(usersRes.rows[0].count, 10),
-      totalOrders: parseInt(ordersRes.rows[0].count, 10),
-      pendingPayouts: parseInt(pendingPayoutsRes.rows[0].count, 10),
-      revenue: parseFloat(revenueRes.rows[0].total),
-    });
-  } catch (e) {
-    console.error("[admin/stats]", e);
-    res.status(500).json({ error: "Failed to fetch stats" });
-  }
-});
-
-app.get("/api/admin/orders", requireAdmin, async (req, res) => {
-  try {
-    const result = await pool.query(
-      "SELECT id, cart_id, user_id, user_email, plan_id, plan_label, amount, status, tran_ref, created_at FROM orders ORDER BY created_at DESC LIMIT 200"
-    );
-    res.json(result.rows);
-  } catch (e) {
-    console.error("[admin/orders]", e);
-    res.status(500).json({ error: "Failed to fetch orders" });
-  }
-});
-
-app.get("/api/admin/payouts", requireAdmin, async (req, res) => {
-  try {
-    const result = await pool.query(
-      "SELECT id, user_id, user_email, amount, status, notes, created_at FROM payout_requests ORDER BY created_at DESC LIMIT 200"
-    );
-    const pending   = await pool.query("SELECT COALESCE(SUM(amount),0) AS total FROM payout_requests WHERE status = 'pending'");
-    const paidMonth = await pool.query("SELECT COALESCE(SUM(amount),0) AS total FROM payout_requests WHERE status = 'paid' AND date_trunc('month', updated_at) = date_trunc('month', NOW())");
-    const paidAll   = await pool.query("SELECT COALESCE(SUM(amount),0) AS total FROM payout_requests WHERE status = 'paid'");
-    res.json({
-      requests: result.rows,
-      pendingTotal: parseFloat(pending.rows[0].total),
-      paidThisMonth: parseFloat(paidMonth.rows[0].total),
-      paidAllTime: parseFloat(paidAll.rows[0].total),
-    });
-  } catch (e) {
-    console.error("[admin/payouts]", e);
-    res.status(500).json({ error: "Failed to fetch payouts" });
-  }
-});
-
-app.patch("/api/admin/payouts/:id", requireAdmin, async (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
-  const { status } = req.body;
-  const allowed = ["pending", "paid", "rejected"];
-  if (!allowed.includes(status)) return res.status(400).json({ error: "Invalid status" });
-  try {
-    const result = await pool.query(
-      "UPDATE payout_requests SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING id, user_email, amount, notes",
-      [status, id]
-    );
-    if (result.rowCount === 0) return res.status(404).json({ error: "Not found" });
-
-    const row = result.rows[0];
-    if (status === "paid" || status === "rejected") {
-      try {
-        await sendPayoutStatusEmail({
-          email: row.user_email,
-          amount: parseFloat(row.amount),
-          status,
-          notes: row.notes,
-        });
-      } catch (emailErr) {
-        console.error("[admin/payouts] failed to send status email:", emailErr);
-      }
-    }
-
-    res.json({ success: true });
-  } catch (e) {
-    console.error("[admin/payouts patch]", e);
-    res.status(500).json({ error: "Failed to update payout" });
-  }
-});
-
-app.post("/api/payout-request", async (req, res) => {
-  const auth = await verifyClerkToken(req.headers.authorization);
-  if (!auth || !auth.userId) return res.status(401).json({ error: "Unauthorized" });
-  const { amount, notes } = req.body;
-  if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
-    return res.status(400).json({ error: "Invalid amount" });
-  }
-  try {
-    await pool.query(
-      "INSERT INTO payout_requests (user_id, user_email, amount, notes) VALUES ($1, $2, $3, $4)",
-      [auth.userId, auth.email, Number(amount), notes || null]
-    );
-    res.json({ success: true });
-  } catch (e) {
-    console.error("[payout-request]", e);
-    res.status(500).json({ error: "Failed to submit payout request" });
-  }
-});
-
-/* ─── Boot ────────────────────────────────────────────────────────── */
-initDb().then(() => {
-  if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
-    const PORT = process.env.SERVER_PORT || 3001;
-    app.listen(PORT, () => {
-      console.log(`[server] API running on port ${PORT}`);
-    });
-  }
-});
+app.listen(PORT, () => console.log(`[server] running on port ${PORT}`));
