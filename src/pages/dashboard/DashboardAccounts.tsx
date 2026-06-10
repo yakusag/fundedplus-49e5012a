@@ -1,17 +1,31 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@clerk/clerk-react";
-import { Monitor, Copy, Check, Eye, EyeOff, Server, Hash, KeyRound, Loader2, AlertCircle } from "lucide-react";
+import { Monitor, Copy, Check, Eye, EyeOff, Server, Hash, KeyRound, Loader2, AlertCircle, TrendingUp, ShieldAlert, Trophy, Target, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 
+type ChallengeRules = {
+  balance: number;
+  profitTargetPct: number;
+  maxDrawdownPct: number;
+  dailyLossPct: number;
+  minDays: number;
+};
+
 type Account = {
+  id: number;
   login: string;
   password: string;
   server: string;
   platform: string;
   plan_id: string | null;
   assigned_at: string;
+  current_pnl_pct: number | null;
+  progress_status: string | null;
+  notes: string | null;
+  progress_updated_at: string | null;
+  rules: ChallengeRules | null;
 };
 
 function CopyBtn({ value }: { value: string }) {
@@ -21,6 +35,122 @@ function CopyBtn({ value }: { value: string }) {
     <button onClick={copy} className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded">
       {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
     </button>
+  );
+}
+
+function ProgressBar({ value, max, color }: { value: number; max: number; color: string }) {
+  const pct = Math.min(Math.max((value / max) * 100, 0), 100);
+  return (
+    <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+      <div className={`h-full rounded-full transition-all duration-700 ${color}`} style={{ width: `${pct}%` }} />
+    </div>
+  );
+}
+
+function StatusBadge({ status, pnlPct, rules }: { status: string | null; pnlPct: number | null; rules: ChallengeRules | null }) {
+  let label = "Active";
+  let cls = "bg-primary/10 text-primary border-primary/20";
+
+  if (status === "passed" || (rules && (pnlPct ?? 0) >= rules.profitTargetPct)) {
+    label = "Passed ✓"; cls = "bg-success/10 text-success border-success/20";
+  } else if (status === "failed" || (rules && (pnlPct ?? 0) <= -(rules.maxDrawdownPct - 1))) {
+    label = "Failed"; cls = "bg-destructive/10 text-destructive border-destructive/20";
+  } else if (status === "at_risk" || (rules && (pnlPct ?? 0) <= -(rules.dailyLossPct))) {
+    label = "At Risk ⚠"; cls = "bg-orange-500/10 text-orange-400 border-orange-500/20";
+  } else if ((pnlPct ?? 0) > 0) {
+    label = "On Track"; cls = "bg-success/10 text-success border-success/20";
+  }
+
+  return <span className={`text-xs border rounded-full px-2.5 py-0.5 ${cls}`}>{label}</span>;
+}
+
+function ChallengeProgress({ account }: { account: Account }) {
+  const { rules } = account;
+  const pnl = account.current_pnl_pct ?? 0;
+  if (!rules) return null;
+
+  const profitProgress = Math.max(pnl, 0);
+  const drawdownUsed = Math.abs(Math.min(pnl, 0));
+  const profitDollar = (pnl / 100) * rules.balance;
+  const targetDollar = (rules.profitTargetPct / 100) * rules.balance;
+  const maxDDDollar = (rules.maxDrawdownPct / 100) * rules.balance;
+  const dailyDollar = (rules.dailyLossPct / 100) * rules.balance;
+
+  return (
+    <div className="mt-5 pt-5 border-t border-white/5 space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold">Challenge Progress</p>
+        {account.progress_updated_at && (
+          <p className="text-xs text-muted-foreground">
+            Updated {new Date(account.progress_updated_at).toLocaleDateString()}
+          </p>
+        )}
+      </div>
+
+      {/* Stats row */}
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          { label: "Current P&L", value: pnl >= 0 ? `+${pnl.toFixed(2)}%` : `${pnl.toFixed(2)}%`, sub: `$${profitDollar >= 0 ? "+" : ""}${profitDollar.toFixed(0)}`, color: pnl >= 0 ? "text-success" : "text-destructive" },
+          { label: "Target", value: `${rules.profitTargetPct}%`, sub: `$${targetDollar.toFixed(0)}`, color: "text-primary" },
+          { label: "Min Days", value: `${rules.minDays}`, sub: "trading days", color: "text-muted-foreground" },
+        ].map(s => (
+          <div key={s.label} className="bg-white/3 rounded-xl p-3 text-center">
+            <p className={`text-sm font-bold font-mono ${s.color}`}>{s.value}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
+            <p className="text-xs text-muted-foreground/60">{s.sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Profit progress */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Target className="h-3.5 w-3.5 text-success" />
+            <span className="text-xs text-muted-foreground">Profit Target</span>
+          </div>
+          <span className="text-xs font-mono">{profitProgress.toFixed(2)}% / {rules.profitTargetPct}%</span>
+        </div>
+        <ProgressBar value={profitProgress} max={rules.profitTargetPct} color="bg-gradient-to-r from-success/70 to-success" />
+      </div>
+
+      {/* Drawdown */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <ShieldAlert className="h-3.5 w-3.5 text-orange-400" />
+            <span className="text-xs text-muted-foreground">Drawdown Used</span>
+          </div>
+          <span className="text-xs font-mono">{drawdownUsed.toFixed(2)}% / {rules.maxDrawdownPct}%</span>
+        </div>
+        <ProgressBar value={drawdownUsed} max={rules.maxDrawdownPct}
+          color={drawdownUsed > rules.maxDrawdownPct * 0.7 ? "bg-gradient-to-r from-orange-500/70 to-destructive" : "bg-gradient-to-r from-orange-500/40 to-orange-500"} />
+      </div>
+
+      {/* Rules quick ref */}
+      <div className="bg-white/3 rounded-xl p-3">
+        <p className="text-xs text-muted-foreground font-medium mb-2">Challenge Rules</p>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+          {[
+            { label: "Profit target", value: `${rules.profitTargetPct}% ($${targetDollar.toFixed(0)})` },
+            { label: "Max drawdown", value: `${rules.maxDrawdownPct}% ($${maxDDDollar.toFixed(0)})` },
+            { label: "Daily loss limit", value: `${rules.dailyLossPct}% ($${dailyDollar.toFixed(0)})` },
+            { label: "Min trading days", value: `${rules.minDays} days` },
+          ].map(r => (
+            <div key={r.label} className="flex items-center justify-between py-0.5">
+              <span className="text-xs text-muted-foreground">{r.label}</span>
+              <span className="text-xs font-medium">{r.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {account.notes && (
+        <div className="bg-primary/5 border border-primary/10 rounded-xl p-3">
+          <p className="text-xs text-muted-foreground">Admin note: <span className="text-foreground">{account.notes}</span></p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -39,11 +169,17 @@ function AccountCard({ account }: { account: Account }) {
           <Monitor className="h-5 w-5 text-[hsl(222,47%,8%)]" />
         </div>
         <div>
-          <p className="font-semibold">{account.platform.toUpperCase()} — {account.plan_id?.toUpperCase() || "Challenge"} Account</p>
+          <p className="font-semibold">
+            {account.platform.toUpperCase()} — {account.plan_id ? account.plan_id.toUpperCase() : "Challenge"} Account
+            {account.rules && <span className="ml-2 text-xs text-muted-foreground font-normal">(${account.rules.balance.toLocaleString()})</span>}
+          </p>
           <p className="text-xs text-muted-foreground mt-0.5">Activated {new Date(account.assigned_at).toLocaleDateString()}</p>
         </div>
-        <span className="ml-auto text-xs bg-success/10 text-success border border-success/20 rounded-full px-2.5 py-0.5">Active</span>
+        <div className="ml-auto">
+          <StatusBadge status={account.progress_status} pnlPct={account.current_pnl_pct} rules={account.rules} />
+        </div>
       </div>
+
       <div className="space-y-2">
         {rows.map(({ icon: Icon, label, value, secret }) => (
           <div key={label} className="flex items-center justify-between bg-white/3 rounded-xl px-4 py-2.5">
@@ -63,6 +199,9 @@ function AccountCard({ account }: { account: Account }) {
           </div>
         ))}
       </div>
+
+      <ChallengeProgress account={account} />
+
       <div className="mt-4 pt-4 border-t border-white/5">
         <p className="text-xs text-muted-foreground">
           Open <span className="font-medium text-foreground">{account.platform.toUpperCase()}</span> → File → Open an Account → search <span className="font-mono text-primary">{account.server}</span>
@@ -102,11 +241,7 @@ export default function DashboardAccounts() {
         body: JSON.stringify({ platform }),
       });
       const data = await res.json();
-      if (data.error === "no_accounts") {
-        toast.error("No available accounts right now. Please contact support.");
-        setAssigning(false);
-        return;
-      }
+      if (data.error === "no_accounts") { toast.error("No available accounts right now. Please contact support."); setAssigning(false); return; }
       if (data.error) { toast.error(data.error); setAssigning(false); return; }
       toast.success(data.already ? "Account loaded!" : "Trading account assigned successfully!");
       setShowPlatformPicker(false);
@@ -126,7 +261,7 @@ export default function DashboardAccounts() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-display font-bold">My Accounts</h1>
-          <p className="text-muted-foreground mt-1.5">Your MetaTrader trading accounts</p>
+          <p className="text-muted-foreground mt-1.5">Your MetaTrader trading accounts & challenge progress</p>
         </div>
         {accounts.length === 0 && (
           <Button onClick={() => setShowPlatformPicker(true)} className="gap-2 shadow-glow-sm">

@@ -1,21 +1,62 @@
 import { Link, useSearchParams } from "react-router-dom";
-import { useUser } from "@clerk/clerk-react";
-import { TrendingUp, Wallet, Trophy, Activity, ArrowRight, Monitor, CheckCircle2, X } from "lucide-react";
+import { useUser, useAuth } from "@clerk/clerk-react";
+import { TrendingUp, Wallet, Trophy, Activity, ArrowRight, Monitor, CheckCircle2, X, Target, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+
+type Account = {
+  id: number;
+  plan_id: string | null;
+  current_pnl_pct: number | null;
+  progress_status: string | null;
+  rules: { balance: number; profitTargetPct: number; maxDrawdownPct: number } | null;
+};
+
+function MiniProgress({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
+  const pct = Math.min(Math.max((value / max) * 100, 0), 100);
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-xs">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="font-mono">{value.toFixed(1)}%</span>
+      </div>
+      <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
 
 export default function DashboardHome() {
   const { user } = useUser();
+  const { getToken } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const paid = searchParams.get("paid") === "1";
   const [dismissed, setDismissed] = useState(false);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const name = user?.firstName || "Trader";
 
+  useEffect(() => {
+    getToken().then(token => {
+      fetch("/api/my-accounts", { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json())
+        .then(d => setAccounts(Array.isArray(d) ? d : []))
+        .catch(() => {});
+    });
+  }, []);
+
+  const activeCount = accounts.length;
+  const totalPnl = accounts.reduce((s, a) => s + (a.current_pnl_pct ?? 0), 0);
+  const passedCount = accounts.filter(a => {
+    const pnl = a.current_pnl_pct ?? 0;
+    return a.progress_status === "passed" || (a.rules && pnl >= a.rules.profitTargetPct);
+  }).length;
+
   const stats = [
-    { label: "Active accounts", value: "0", icon: Trophy, color: "text-primary" },
-    { label: "Total profit", value: "$0", icon: TrendingUp, color: "text-success" },
-    { label: "Available payout", value: "$0", icon: Wallet, color: "text-primary" },
-    { label: "Trades this week", value: "0", icon: Activity, color: "text-muted-foreground" },
+    { label: "Active accounts", value: String(activeCount), icon: Trophy, color: "text-primary" },
+    { label: "Challenges passed", value: String(passedCount), icon: CheckCircle2, color: "text-success" },
+    { label: "Avg P&L", value: activeCount > 0 ? `${(totalPnl / activeCount).toFixed(1)}%` : "0%", icon: TrendingUp, color: totalPnl >= 0 ? "text-success" : "text-destructive" },
+    { label: "In progress", value: String(activeCount - passedCount), icon: Activity, color: "text-muted-foreground" },
   ];
 
   function dismissBanner() {
@@ -68,6 +109,46 @@ export default function DashboardHome() {
           </div>
         ))}
       </div>
+
+      {accounts.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="font-display font-semibold">Active Challenges</h2>
+            <Link to="/dashboard/accounts" className="text-xs text-primary hover:underline">View all →</Link>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            {accounts.slice(0, 4).map((a, i) => {
+              const pnl = a.current_pnl_pct ?? 0;
+              const isOn = a.rules ? pnl >= a.rules.profitTargetPct : false;
+              const isRisk = a.rules ? pnl <= -(a.rules.maxDrawdownPct * 0.7) : false;
+              return (
+                <div key={i} className="glass rounded-2xl p-4 border border-white/5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-sm font-semibold">{a.plan_id?.toUpperCase() || "Challenge"}
+                        {a.rules && <span className="ml-1.5 text-xs text-muted-foreground font-normal">${a.rules.balance.toLocaleString()}</span>}
+                      </p>
+                    </div>
+                    <span className={`text-xs border rounded-full px-2 py-0.5 ${isOn ? "bg-success/10 text-success border-success/20" : isRisk ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-primary/10 text-primary border-primary/20"}`}>
+                      {isOn ? "Passed ✓" : isRisk ? "At Risk" : "On Track"}
+                    </span>
+                  </div>
+                  {a.rules && (
+                    <div className="space-y-2">
+                      <MiniProgress label="Profit" value={Math.max(pnl, 0)} max={a.rules.profitTargetPct} color="bg-success" />
+                      <MiniProgress label="Drawdown" value={Math.abs(Math.min(pnl, 0))} max={a.rules.maxDrawdownPct}
+                        color={Math.abs(Math.min(pnl, 0)) > a.rules.maxDrawdownPct * 0.7 ? "bg-destructive" : "bg-orange-500"} />
+                    </div>
+                  )}
+                  {!a.rules && (
+                    <p className="text-xs text-muted-foreground">Progress tracking not available for this plan.</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="grid md:grid-cols-2 gap-4">
         <div className="glass rounded-2xl p-8 text-center border border-primary/10">

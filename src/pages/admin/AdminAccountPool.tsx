@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@clerk/clerk-react";
-import { Plus, Trash2, Monitor, Loader2, RefreshCw, Users, CheckCircle2 } from "lucide-react";
+import { Plus, Trash2, Monitor, Loader2, RefreshCw, Users, CheckCircle2, TrendingUp, Edit3, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -16,15 +16,17 @@ type PoolAccount = {
   is_active: boolean;
 };
 
+type ProgressEdit = { accountId: number; login: string; pnlPct: string; status: string; notes: string };
+
 export default function AdminAccountPool() {
   const { getToken } = useAuth();
   const [accounts, setAccounts] = useState<PoolAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
-    login: "", password: "", server: "Fundedelite-Server", platform: "mt5", plan_id: ""
-  });
+  const [progressEdit, setProgressEdit] = useState<ProgressEdit | null>(null);
+  const [savingProgress, setSavingProgress] = useState(false);
+  const [form, setForm] = useState({ login: "", password: "", server: "Fundedelite-Server", platform: "mt5", plan_id: "" });
 
   async function load() {
     setLoading(true);
@@ -39,10 +41,7 @@ export default function AdminAccountPool() {
   useEffect(() => { load(); }, []);
 
   async function handleAdd() {
-    if (!form.login || !form.password || !form.server) {
-      toast.error("Login, password and server are required");
-      return;
-    }
+    if (!form.login || !form.password || !form.server) { toast.error("Login, password and server are required"); return; }
     setSaving(true);
     try {
       const token = await getToken();
@@ -67,6 +66,23 @@ export default function AdminAccountPool() {
       toast.success("Removed");
       load();
     } catch { toast.error("Error"); }
+  }
+
+  async function handleProgressSave() {
+    if (!progressEdit) return;
+    setSavingProgress(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`/api/challenge-progress/${progressEdit.accountId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ current_pnl_pct: parseFloat(progressEdit.pnlPct) || 0, status: progressEdit.status, notes: progressEdit.notes }),
+      });
+      if (!res.ok) { toast.error("Failed to save progress"); setSavingProgress(false); return; }
+      toast.success("Progress updated!");
+      setProgressEdit(null);
+    } catch { toast.error("Error"); }
+    setSavingProgress(false);
   }
 
   const free = accounts.filter(a => !a.assigned_to).length;
@@ -111,33 +127,25 @@ export default function AdminAccountPool() {
             ].map(({ key, label, placeholder }) => (
               <div key={key} className={key === "server" ? "col-span-2" : ""}>
                 <label className="text-xs text-muted-foreground mb-1 block">{label}</label>
-                <input
-                  value={form[key as keyof typeof form]}
-                  onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))}
-                  placeholder={placeholder}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary/50"
-                />
+                <input value={form[key as keyof typeof form]} onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))} placeholder={placeholder}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary/50" />
               </div>
             ))}
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Platform</label>
-              <select
-                value={form.platform}
-                onChange={e => setForm(p => ({ ...p, platform: e.target.value }))}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary/50"
-              >
+              <select value={form.platform} onChange={e => setForm(p => ({ ...p, platform: e.target.value }))}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary/50">
                 <option value="mt5">MT5</option>
                 <option value="mt4">MT4</option>
               </select>
             </div>
             <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Plan (optional)</label>
-              <input
-                value={form.plan_id}
-                onChange={e => setForm(p => ({ ...p, plan_id: e.target.value }))}
-                placeholder="5k / 10k / ..."
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary/50"
-              />
+              <label className="text-xs text-muted-foreground mb-1 block">Plan</label>
+              <select value={form.plan_id} onChange={e => setForm(p => ({ ...p, plan_id: e.target.value }))}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary/50">
+                <option value="">— none —</option>
+                {["5k","10k","25k","50k","100k","200k"].map(p => <option key={p} value={p}>{p.toUpperCase()}</option>)}
+              </select>
             </div>
           </div>
           <div className="flex gap-2 pt-1">
@@ -149,10 +157,53 @@ export default function AdminAccountPool() {
         </div>
       )}
 
-      {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      {/* Progress edit modal */}
+      {progressEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="glass rounded-2xl p-6 w-full max-w-sm border border-primary/20 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-display font-semibold">Update Progress</h2>
+              <button onClick={() => setProgressEdit(null)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+            </div>
+            <p className="text-xs text-muted-foreground">Account login: <span className="font-mono text-foreground">{progressEdit.login}</span></p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Current P&L %</label>
+                <input type="number" step="0.01" value={progressEdit.pnlPct}
+                  onChange={e => setProgressEdit(p => p ? { ...p, pnlPct: e.target.value } : p)}
+                  placeholder="e.g. 4.5 or -2.1"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary/50" />
+                <p className="text-xs text-muted-foreground mt-1">Positive = profit, negative = drawdown</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Status Override</label>
+                <select value={progressEdit.status} onChange={e => setProgressEdit(p => p ? { ...p, status: e.target.value } : p)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary/50">
+                  <option value="active">Active (auto from P&L)</option>
+                  <option value="at_risk">At Risk</option>
+                  <option value="passed">Passed ✓</option>
+                  <option value="failed">Failed</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Note to trader (optional)</label>
+                <input value={progressEdit.notes} onChange={e => setProgressEdit(p => p ? { ...p, notes: e.target.value } : p)}
+                  placeholder="e.g. Great progress! Keep it up."
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary/50" />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button onClick={handleProgressSave} disabled={savingProgress} className="flex-1 gap-2">
+                {savingProgress ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</> : "Save Progress"}
+              </Button>
+              <Button variant="outline" onClick={() => setProgressEdit(null)}>Cancel</Button>
+            </div>
+          </div>
         </div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       ) : accounts.length === 0 ? (
         <div className="glass rounded-2xl p-10 text-center">
           <Monitor className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
@@ -170,13 +221,22 @@ export default function AdminAccountPool() {
                 <div>
                   <p className="text-sm font-mono font-medium">{a.login} <span className="text-muted-foreground font-sans">— {a.server}</span></p>
                   <p className="text-xs text-muted-foreground">
-                    {a.platform.toUpperCase()} {a.plan_id ? `· ${a.plan_id}` : ""} {a.assigned_to ? `· Assigned` : "· Free"}
+                    {a.platform.toUpperCase()} {a.plan_id ? `· ${a.plan_id}` : ""} {a.assigned_to ? "· Assigned" : "· Free"}
                   </p>
                 </div>
               </div>
-              <button onClick={() => handleDelete(a.id)} className="text-muted-foreground hover:text-destructive transition-colors p-1.5 rounded-lg hover:bg-destructive/10">
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              <div className="flex items-center gap-1">
+                {a.assigned_to && (
+                  <button title="Update progress"
+                    onClick={() => setProgressEdit({ accountId: a.id, login: a.login, pnlPct: "0", status: "active", notes: "" })}
+                    className="text-muted-foreground hover:text-primary transition-colors p-1.5 rounded-lg hover:bg-primary/10">
+                    <TrendingUp className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                <button onClick={() => handleDelete(a.id)} className="text-muted-foreground hover:text-destructive transition-colors p-1.5 rounded-lg hover:bg-destructive/10">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
           ))}
         </div>

@@ -174,6 +174,17 @@ app.post("/api/paytabs-webhook", express.text({ type: "*/*" }), async (req, res)
   res.send("ok");
 });
 
+// ─── Challenge Rules ─────────────────────────────────────────
+
+const CHALLENGE_RULES: Record<string, { balance: number; profitTargetPct: number; maxDrawdownPct: number; dailyLossPct: number; minDays: number }> = {
+  "5k":   { balance: 5000,   profitTargetPct: 10, maxDrawdownPct: 10, dailyLossPct: 5, minDays: 5 },
+  "10k":  { balance: 10000,  profitTargetPct: 10, maxDrawdownPct: 10, dailyLossPct: 5, minDays: 5 },
+  "25k":  { balance: 25000,  profitTargetPct: 10, maxDrawdownPct: 10, dailyLossPct: 5, minDays: 5 },
+  "50k":  { balance: 50000,  profitTargetPct: 10, maxDrawdownPct: 10, dailyLossPct: 5, minDays: 5 },
+  "100k": { balance: 100000, profitTargetPct: 10, maxDrawdownPct: 10, dailyLossPct: 5, minDays: 5 },
+  "200k": { balance: 200000, profitTargetPct: 10, maxDrawdownPct: 10, dailyLossPct: 5, minDays: 5 },
+};
+
 // ─── Account Pool ────────────────────────────────────────────
 
 app.get("/api/account-pool", async (req, res) => {
@@ -243,10 +254,39 @@ app.get("/api/my-accounts", async (req, res) => {
   if (!auth?.userId) return res.status(401).json({ error: "Unauthorized" });
   try {
     const { rows } = await pool.query(
-      `SELECT login, password, server, platform, plan_id, assigned_at FROM account_pool WHERE assigned_to=$1 AND is_active=true`,
+      `SELECT ap.id, ap.login, ap.password, ap.server, ap.platform, ap.plan_id, ap.assigned_at,
+              cp.current_pnl_pct, cp.status as progress_status, cp.notes, cp.updated_at as progress_updated_at
+       FROM account_pool ap
+       LEFT JOIN challenge_progress cp ON cp.account_pool_id = ap.id
+       WHERE ap.assigned_to=$1 AND ap.is_active=true`,
       [auth.userId]
     );
-    return res.json(rows);
+    const enriched = rows.map(r => ({
+      ...r,
+      rules: CHALLENGE_RULES[r.plan_id?.toLowerCase() || ""] || null,
+    }));
+    return res.json(enriched);
+  } catch (e) { return res.status(500).json({ error: "DB error" }); }
+});
+
+// ─── Challenge Progress (admin update) ───────────────────────
+
+app.patch("/api/challenge-progress/:accountId", async (req, res) => {
+  const auth = await verifyClerkToken(req.headers.authorization);
+  if (!auth?.userId) return res.status(401).json({ error: "Unauthorized" });
+  const accountId = parseInt(req.params.accountId);
+  if (isNaN(accountId)) return res.status(400).json({ error: "Invalid account id" });
+  const { current_pnl_pct, status, notes } = req.body;
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO challenge_progress (account_pool_id, current_pnl_pct, status, notes, updated_at, updated_by)
+       VALUES ($1, $2, $3, $4, NOW(), $5)
+       ON CONFLICT (account_pool_id) DO UPDATE
+       SET current_pnl_pct=$2, status=$3, notes=$4, updated_at=NOW(), updated_by=$5
+       RETURNING *`,
+      [accountId, current_pnl_pct ?? 0, status || "active", notes || null, auth.userId]
+    );
+    return res.json(rows[0]);
   } catch (e) { return res.status(500).json({ error: "DB error" }); }
 });
 
